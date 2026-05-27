@@ -9,6 +9,8 @@ from app.models import Base  # noqa: F401 ensure models registered
 import app.models.organization  # noqa: F401
 import app.models.package  # noqa: F401
 import app.models.student  # noqa: F401
+import app.models.staff_student  # noqa: F401
+import app.models.audit  # noqa: F401
 import app.models.user  # noqa: F401
 
 config = context.config
