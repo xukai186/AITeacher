@@ -11,6 +11,8 @@ import app.models.package  # noqa: F401
 import app.models.student  # noqa: F401
 import app.models.staff_student  # noqa: F401
 import app.models.audit  # noqa: F401
+import app.models.chat  # noqa: F401
+import app.models.model_policy  # noqa: F401
 import app.models.user  # noqa: F401
 
 config = context.config
