@@ -21,3 +21,7 @@ class StudentSummary(BaseModel):
     exam_year: int
     exam_date: date | None
     package_id: uuid.UUID | None
+
+
+class StudentDetail(StudentSummary):
+    subject_codes: list[str]

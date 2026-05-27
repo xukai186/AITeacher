@@ -1,11 +1,19 @@
 from fastapi import FastAPI
 
-from app.routers import admin_students, auth as auth_router, me as me_router
+from app.routers import (
+    admin_packages,
+    admin_staff,
+    admin_students,
+    auth as auth_router,
+    me as me_router,
+)
 
 app = FastAPI(title="AITeacher API", version="0.1.0")
 app.include_router(auth_router.router)
 app.include_router(me_router.router)
 app.include_router(admin_students.router)
+app.include_router(admin_staff.router)
+app.include_router(admin_packages.router)
 
 
 @app.get("/health")
