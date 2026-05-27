@@ -6,6 +6,7 @@ import StudentsList from "@/pages/admin/StudentsList";
 import StaffList from "@/pages/admin/StaffList";
 import PackagesList from "@/pages/admin/PackagesList";
 import MyStudents from "@/pages/staff/MyStudents";
+import Workspace from "@/pages/student/Workspace";
 
 export default function App() {
   return (
@@ -42,7 +43,7 @@ export default function App() {
           </ProtectedRoute>
         }
       >
-        <Route path="/student/workspace/*" element={<div>student workspace placeholder</div>} />
+        <Route path="/student/workspace/*" element={<Workspace />} />
       </Route>
 
       <Route path="*" element={<Navigate to="/login" replace />} />
