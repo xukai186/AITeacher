@@ -7,6 +7,7 @@ import { AuthProvider } from "../src/auth/AuthContext";
 beforeEach(() => {
   localStorage.clear();
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
 });
 
 function mockFetch(responses: Record<string, { status: number; body: unknown }>) {
