@@ -26,3 +26,7 @@ export function createStudent(body: CreateStudentBody) {
     body: JSON.stringify(body),
   });
 }
+
+export function listMyStudents() {
+  return api<Student[]>("/staff/students");
+}

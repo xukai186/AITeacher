@@ -5,6 +5,7 @@ import ProtectedRoute from "@/components/ProtectedRoute";
 import StudentsList from "@/pages/admin/StudentsList";
 import StaffList from "@/pages/admin/StaffList";
 import PackagesList from "@/pages/admin/PackagesList";
+import MyStudents from "@/pages/staff/MyStudents";
 
 export default function App() {
   return (
@@ -31,7 +32,7 @@ export default function App() {
           </ProtectedRoute>
         }
       >
-        <Route path="/staff/students" element={<div>staff students placeholder</div>} />
+        <Route path="/staff/students" element={<MyStudents />} />
       </Route>
 
       <Route
