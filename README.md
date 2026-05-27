@@ -18,4 +18,4 @@ uv run uvicorn app.main:app --reload --port 8000
 cd ../frontend && npm install && npm run dev
 ```
 
-Default admin: `admin@demo.local` / `admin123`.
+Default admin: `admin@demo.example` / `admin123`.

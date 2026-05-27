@@ -24,7 +24,7 @@ def make_user(
 ) -> User:
     user = User(
         org_id=org.id,
-        email=email or f"{role.value}-{uuid.uuid4().hex[:8]}@demo.local",
+        email=email or f"{role.value}-{uuid.uuid4().hex[:8]}@demo.example",
         password_hash=password_hash,
         role=role,
         status=UserStatus.active,
