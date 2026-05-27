@@ -1,5 +1,6 @@
 import { FormEvent, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { assignPackage, listPackages } from "@/api/packages";
 import { createStudent, listStudents, Student } from "@/api/students";
 
 export default function StudentsList() {
@@ -9,8 +10,19 @@ export default function StudentsList() {
     queryFn: listStudents,
   });
 
+  const { data: packages } = useQuery({
+    queryKey: ["admin", "packages"],
+    queryFn: listPackages,
+  });
+
   const createMut = useMutation({
     mutationFn: createStudent,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["admin", "students"] }),
+  });
+
+  const assignMut = useMutation({
+    mutationFn: ({ studentId, packageId }: { studentId: string; packageId: string }) =>
+      assignPackage(studentId, packageId),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["admin", "students"] }),
   });
 
@@ -102,7 +114,23 @@ export default function StudentsList() {
                   <td className="px-4 py-2">{s.name}</td>
                   <td className="px-4 py-2">{s.email}</td>
                   <td className="px-4 py-2">{s.exam_year}</td>
-                  <td className="px-4 py-2 text-slate-500">{s.package_id ?? "—"}</td>
+                  <td className="px-4 py-2">
+                    <select
+                      className="border rounded px-2 py-1 text-sm"
+                      value={s.package_id ?? ""}
+                      onChange={(e) => assignMut.mutate({ studentId: s.id, packageId: e.target.value })}
+                      disabled={!packages || packages.length === 0}
+                    >
+                      <option value="" disabled>
+                        未分配
+                      </option>
+                      {packages?.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.name}
+                        </option>
+                      ))}
+                    </select>
+                  </td>
                 </tr>
               ))}
               {data.length === 0 && (

@@ -4,6 +4,7 @@ import Layout from "@/components/Layout";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import StudentsList from "@/pages/admin/StudentsList";
 import StaffList from "@/pages/admin/StaffList";
+import PackagesList from "@/pages/admin/PackagesList";
 
 export default function App() {
   return (
@@ -20,7 +21,7 @@ export default function App() {
       >
         <Route path="/admin/students" element={<StudentsList />} />
         <Route path="/admin/staff" element={<StaffList />} />
-        <Route path="/admin/packages" element={<div>admin packages placeholder</div>} />
+        <Route path="/admin/packages" element={<PackagesList />} />
       </Route>
 
       <Route
