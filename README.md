@@ -19,3 +19,11 @@ cd ../frontend && npm install && npm run dev
 ```
 
 Default admin: `admin@demo.example` / `admin123`.
+
+## P1 verification
+
+After `python -m app.seed`:
+
+- admin@demo.example / admin123 → `/admin/students`
+- teacher@demo.example / teach123 → `/staff/students`
+- student@demo.example / stud123 → `/student/workspace`
