@@ -2,6 +2,7 @@ import { Routes, Route, Navigate } from "react-router-dom";
 import Login from "@/pages/Login";
 import Layout from "@/components/Layout";
 import ProtectedRoute from "@/components/ProtectedRoute";
+import StudentsList from "@/pages/admin/StudentsList";
 
 export default function App() {
   return (
@@ -16,7 +17,7 @@ export default function App() {
           </ProtectedRoute>
         }
       >
-        <Route path="/admin/students" element={<div>admin students placeholder</div>} />
+        <Route path="/admin/students" element={<StudentsList />} />
         <Route path="/admin/staff" element={<div>admin staff placeholder</div>} />
         <Route path="/admin/packages" element={<div>admin packages placeholder</div>} />
       </Route>
