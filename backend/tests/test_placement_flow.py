@@ -1,7 +1,7 @@
 from sqlalchemy import select
 
 from app.auth.security import hash_password
-from app.models import MasterySnapshot, PlacementPaper, PlacementQuestion, PlacementResult, StudentProfile, StudentSubject, UserRole
+from app.models import MasterPlan, MasterPlanVersion, MasterySnapshot, PlacementPaper, PlacementQuestion, PlacementResult, StudentProfile, StudentSubject, SubjectPlan, SubjectPlanVersion, UserRole, DailyTask
 from tests.factories import make_org, make_user
 
 
@@ -61,3 +61,8 @@ def test_student_can_submit_placement_and_get_result(client, db_session):
     assert out["total_score"] > 0
     assert db_session.query(PlacementResult).count() == 1
     assert db_session.query(MasterySnapshot).count() == 1
+    assert db_session.query(MasterPlan).count() == 1
+    assert db_session.query(MasterPlanVersion).count() == 1
+    assert db_session.query(SubjectPlan).count() >= 1
+    assert db_session.query(SubjectPlanVersion).count() >= 1
+    assert db_session.query(DailyTask).count() >= 1

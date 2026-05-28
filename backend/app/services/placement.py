@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import uuid
+from datetime import date
 
 from fastapi import HTTPException, status
 from sqlalchemy import func, select
@@ -19,6 +20,8 @@ from app.schemas.placement import (
     PlacementSubjectStatus,
 )
 from app.services.mastery import MasteryService
+from app.services.planning import PlanningService
+from app.services.tasks import TaskGenerator
 from app.seed_syllabus import seed_minimal_syllabus
 
 QUESTIONS_PER_SUBJECT = 10
@@ -299,6 +302,9 @@ class PlacementService:
                 mastery_json=mastery_levels,
             )
         )
+
+        PlanningService().create_initial_plans(db, student_user_id=student_user_id)
+        TaskGenerator().generate_next_7_days(db, student_user_id=student_user_id, today=date.today())
 
         db.commit()
         return PlacementSubmitOut(

@@ -84,5 +84,5 @@ class PlanningService:
 
             plan.current_version_id = ver.id
 
-        db.commit()
+        db.flush()
 

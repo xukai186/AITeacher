@@ -33,12 +33,15 @@ class TaskGenerator:
                     date=day,
                     subject_code=subject_code,
                     type="study",
-                    ref_id=None,
+                    ref_id=uuid.uuid5(
+                        uuid.NAMESPACE_URL,
+                        f"daily_task:{student_user_id}:{subject_code}:{day.isoformat()}:study",
+                    ),
                     status="pending",
                     est_minutes=60,
                     title="英语 学习任务" if subject_code == "english" else f"{subject_code} 学习任务",
                     payload_json=None,
                 )
             )
-        db.commit()
+        db.flush()
 
