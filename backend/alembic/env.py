@@ -14,6 +14,11 @@ import app.models.audit  # noqa: F401
 import app.models.chat  # noqa: F401
 import app.models.model_policy  # noqa: F401
 import app.models.user  # noqa: F401
+import app.models.syllabus  # noqa: F401
+import app.models.placement  # noqa: F401
+import app.models.mastery  # noqa: F401
+import app.models.plan  # noqa: F401
+import app.models.task  # noqa: F401
 
 config = context.config
 if config.config_file_name is not None:
