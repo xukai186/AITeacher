@@ -34,7 +34,15 @@ function mockFetch() {
                 total_count: 3,
               },
             ],
-            self_test_trend: [],
+            self_test_trend: [
+              {
+                submission_id: "sub1",
+                paper_id: "p1",
+                subject_code: "english",
+                total_score: 8,
+                created_at: "2026-05-28T00:00:00Z",
+              },
+            ],
             recommendations: [
               {
                 type: "review_wrong",
@@ -81,6 +89,8 @@ describe("Report page", () => {
     await waitFor(() => expect(screen.getByText("阅读理解：3")).toBeTruthy());
     await waitFor(() => expect(screen.getByText("建议")).toBeTruthy());
     await waitFor(() => expect(screen.getByText("优先复习：阅读理解")).toBeTruthy());
+    await waitFor(() => expect(screen.getByText("自测趋势")).toBeTruthy());
+    await waitFor(() => expect(screen.getByText("8 分")).toBeTruthy());
   });
 });
 
