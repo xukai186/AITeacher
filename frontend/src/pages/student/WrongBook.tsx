@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { useSearchParams } from "react-router-dom";
 import { fetchStudentMe } from "@/api/me";
 import { listWrongBook } from "@/api/wrongBook";
 
@@ -16,11 +17,13 @@ const SOURCE_LABELS: Record<string, string> = {
 };
 
 export default function WrongBook() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const me = useQuery({ queryKey: ["student", "me"], queryFn: fetchStudentMe });
   // "__default__" means use first subject in profile.
   // "" means all subjects (no subject_code filter).
   const [subject, setSubject] = useState<string>("__default__");
   const [sourceType, setSourceType] = useState<string>("");
+  const [knowledgeNodeId, setKnowledgeNodeId] = useState<string>("");
   const [offset, setOffset] = useState(0);
   const limit = 20;
   const [allItems, setAllItems] = useState<any[]>([]);
@@ -29,12 +32,23 @@ export default function WrongBook() {
   const subjectOptions = useMemo(() => me.data?.subject_codes ?? [], [me.data?.subject_codes]);
   const effectiveSubject = subject === "__default__" ? subjectOptions[0] || "" : subject;
 
+  useEffect(() => {
+    const pSubject = searchParams.get("subject_code");
+    const pSourceType = searchParams.get("source_type");
+    const pNode = searchParams.get("knowledge_node_id");
+    if (pSubject !== null) setSubject(pSubject);
+    if (pSourceType !== null) setSourceType(pSourceType);
+    if (pNode !== null) setKnowledgeNodeId(pNode);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const items = useQuery({
-    queryKey: ["student", "wrong_book", effectiveSubject, sourceType, offset, limit],
+    queryKey: ["student", "wrong_book", effectiveSubject, sourceType, knowledgeNodeId, offset, limit],
     queryFn: () =>
       listWrongBook({
         subject_code: effectiveSubject || undefined,
         source_type: sourceType || undefined,
+        knowledge_node_id: knowledgeNodeId || undefined,
         limit,
         offset,
       }),
@@ -45,7 +59,7 @@ export default function WrongBook() {
     setOffset(0);
     setAllItems([]);
     setHasMore(true);
-  }, [effectiveSubject, sourceType]);
+  }, [effectiveSubject, sourceType, knowledgeNodeId]);
 
   useEffect(() => {
     if (!items.data) return;
@@ -96,6 +110,25 @@ export default function WrongBook() {
           </select>
         </div>
       </header>
+
+      {knowledgeNodeId ? (
+        <div className="bg-white shadow rounded p-3 text-sm flex items-center justify-between">
+          <div className="text-slate-700">
+            当前筛选：<span className="font-mono">{knowledgeNodeId}</span>
+          </div>
+          <button
+            className="underline text-slate-700"
+            onClick={() => {
+              setKnowledgeNodeId("");
+              const next = new URLSearchParams(searchParams);
+              next.delete("knowledge_node_id");
+              setSearchParams(next);
+            }}
+          >
+            清除知识点筛选
+          </button>
+        </div>
+      ) : null}
 
       {items.isLoading && allItems.length === 0 ? (
         <p className="text-slate-500 text-sm">加载中…</p>

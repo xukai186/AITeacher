@@ -146,6 +146,7 @@ class WrongBookService:
         student_user_id: uuid.UUID,
         subject_code: str | None = None,
         source_type: str | None = None,
+        knowledge_node_id: uuid.UUID | None = None,
         limit: int = 50,
         offset: int = 0,
     ) -> list[WrongBookItem]:
@@ -154,6 +155,8 @@ class WrongBookService:
             stmt = stmt.where(WrongBookItem.subject_code == subject_code)
         if source_type:
             stmt = stmt.where(WrongBookItem.source_type == source_type)
+        if knowledge_node_id:
+            stmt = stmt.where(WrongBookItem.knowledge_node_id == knowledge_node_id)
         stmt = stmt.order_by(WrongBookItem.created_at.desc())
         stmt = stmt.limit(limit).offset(offset)
         return db.execute(stmt).scalars().all()

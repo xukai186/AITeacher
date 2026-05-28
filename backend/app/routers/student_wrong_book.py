@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
+import uuid
 
 from app.auth.permissions import require_roles
 from app.database import get_db
@@ -14,6 +15,7 @@ router = APIRouter(prefix="/student/wrong-book", tags=["student-wrong-book"])
 def list_wrong_book(
     subject_code: str | None = Query(default=None, max_length=40),
     source_type: str | None = Query(default=None, max_length=40),
+    knowledge_node_id: uuid.UUID | None = Query(default=None),
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
     db: Session = Depends(get_db),
@@ -24,6 +26,7 @@ def list_wrong_book(
         student.id,
         subject_code=subject_code,
         source_type=source_type,
+        knowledge_node_id=knowledge_node_id,
         limit=limit,
         offset=offset,
     )

@@ -3,7 +3,7 @@ import uuid
 from sqlalchemy import select
 
 from app.auth.security import hash_password
-from app.models import WrongBookItem, StudentProfile, StudentSubject, UserRole
+from app.models import SyllabusNode, WrongBookItem, StudentProfile, StudentSubject, UserRole
 from tests.factories import make_org, make_user
 
 
@@ -142,4 +142,49 @@ def test_wrong_book_supports_source_type_and_pagination(client, db_session):
     )
     assert page2.status_code == 200
     assert len(page2.json()) >= 0
+
+
+def test_wrong_book_supports_knowledge_node_filter(client, db_session):
+    student = _seed_student(db_session)
+    token = _token(client)
+
+    n1 = SyllabusNode(subject_code="english", name="n1", parent_id=None, weight=1)
+    n2 = SyllabusNode(subject_code="english", name="n2", parent_id=None, weight=1)
+    db_session.add_all([n1, n2])
+    db_session.flush()
+
+    db_session.add_all(
+        [
+            WrongBookItem(
+                student_user_id=student.id,
+                subject_code="english",
+                knowledge_node_id=n1.id,
+                source_type="self_test",
+                source_id=uuid.uuid4(),
+                question_snapshot_json={"stem": "q1"},
+                answer_snapshot_json={"content": "x"},
+                correct_snapshot_json={"answer_key": "y"},
+            ),
+            WrongBookItem(
+                student_user_id=student.id,
+                subject_code="english",
+                knowledge_node_id=n2.id,
+                source_type="self_test",
+                source_id=uuid.uuid4(),
+                question_snapshot_json={"stem": "q2"},
+                answer_snapshot_json={"content": "x"},
+                correct_snapshot_json={"answer_key": "y"},
+            ),
+        ]
+    )
+    db_session.commit()
+
+    resp = client.get(
+        f"/student/wrong-book?subject_code=english&knowledge_node_id={n1.id}",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 200
+    out = resp.json()
+    assert len(out) == 1
+    assert out[0]["knowledge_node_id"] == str(n1.id)
 

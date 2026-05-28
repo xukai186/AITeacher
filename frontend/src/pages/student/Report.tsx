@@ -29,6 +29,14 @@ export default function Report() {
   if (me.isLoading) return <p className="text-slate-500">加载中…</p>;
   if (me.error) return <p className="text-red-600">{(me.error as Error).message}</p>;
 
+  function wrongBookLink(knowledgeNodeId: string | null): string {
+    const qs = new URLSearchParams();
+    if (effectiveSubject) qs.set("subject_code", effectiveSubject);
+    if (knowledgeNodeId) qs.set("knowledge_node_id", knowledgeNodeId);
+    const suffix = qs.toString() ? `?${qs.toString()}` : "";
+    return `/student/wrong-book${suffix}`;
+  }
+
   return (
     <div className="max-w-4xl mx-auto space-y-4">
       <header className="flex justify-between items-baseline">
@@ -68,8 +76,15 @@ export default function Report() {
             <div className="font-medium">薄弱点 Top</div>
             <ul className="text-sm text-slate-700 space-y-1">
               {(overview.data?.weak_nodes ?? []).map((n, idx) => (
-                <li key={n.knowledge_node_id ?? `null-${idx}`}>
-                  {n.knowledge_node_name ?? "（未标注知识点）"}：{n.wrong_count}
+                <li key={n.knowledge_node_id ?? `null-${idx}`} className="flex justify-between items-center">
+                  <span>
+                    {n.knowledge_node_name ?? "（未标注知识点）"}：{n.wrong_count}
+                  </span>
+                  {n.knowledge_node_id ? (
+                    <Link to={wrongBookLink(n.knowledge_node_id)} className="text-slate-700 underline">
+                      查看错题
+                    </Link>
+                  ) : null}
                 </li>
               ))}
             </ul>
