@@ -12,10 +12,8 @@ const NAV_BY_ROLE: Record<string, NavItem[]> = {
   org_staff: [{ to: "/staff/students", label: "我的学员" }],
   student: [
     { to: "/student/workspace", label: "今日计划" },
-    { to: "/student/workspace/plan", label: "总计划" },
-    { to: "/student/workspace/wrong", label: "错题集" },
-    { to: "/student/workspace/papers", label: "试卷中心" },
-    { to: "/student/workspace/report", label: "学情报告" },
+    { to: "/student/self-tests", label: "自测" },
+    { to: "/student/wrong-book", label: "错题本" },
   ],
 };
 

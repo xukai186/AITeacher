@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { fetchStudentMe } from "@/api/me";
 import { startPlacement } from "@/api/placement";
 import { fetchTodayTasks } from "@/api/tasks";
+import { generateSelfTest } from "@/api/selfTests";
 import ChatPanel from "@/components/chat/ChatPanel";
 import { useMutation } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
@@ -33,6 +34,13 @@ export default function Workspace() {
     },
   });
 
+  const [selfTestOpen, setSelfTestOpen] = useState(false);
+  const [selfTestSubject, setSelfTestSubject] = useState<string>("");
+  const genSelfTest = useMutation({
+    mutationFn: async () => generateSelfTest({ subject_code: selfTestSubject }),
+    onSuccess: (p) => navigate(`/student/self-tests/${p.id}`),
+  });
+
   const [activeSubject, setActiveSubject] = useState<string | null>(null);
 
   if (isLoading) return <p className="text-slate-500">加载中…</p>;
@@ -59,6 +67,54 @@ export default function Workspace() {
             开始摸底测评
           </button>
         </div>
+
+        <div className="flex justify-between items-center">
+          <div className="text-sm text-slate-600">自测（P4）</div>
+          <button
+            className="px-3 py-1 rounded text-sm bg-slate-900 text-white disabled:bg-slate-200 disabled:text-slate-500"
+            disabled={data.subject_codes.length === 0}
+            onClick={() => {
+              setSelfTestSubject(data.subject_codes[0] ?? "");
+              setSelfTestOpen(true);
+            }}
+          >
+            生成自测
+          </button>
+        </div>
+
+        {selfTestOpen && (
+          <div className="fixed inset-0 bg-black/30 flex items-center justify-center p-4">
+            <div className="bg-white rounded shadow w-full max-w-sm p-4 space-y-3">
+              <div className="font-semibold">选择科目</div>
+              <select
+                className="w-full border rounded px-3 py-2 text-sm"
+                value={selfTestSubject}
+                onChange={(e) => setSelfTestSubject(e.target.value)}
+              >
+                {data.subject_codes.map((code) => (
+                  <option key={code} value={code}>
+                    {SUBJECT_LABELS[code] ?? code}
+                  </option>
+                ))}
+              </select>
+              <div className="flex justify-end gap-2">
+                <button
+                  className="px-3 py-1 rounded border text-sm bg-white text-slate-700 border-slate-300"
+                  onClick={() => setSelfTestOpen(false)}
+                >
+                  取消
+                </button>
+                <button
+                  className="px-3 py-1 rounded text-sm bg-slate-900 text-white disabled:bg-slate-200 disabled:text-slate-500"
+                  disabled={!selfTestSubject || genSelfTest.isPending}
+                  onClick={() => genSelfTest.mutate()}
+                >
+                  生成并开始
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         <div className="flex gap-2 flex-wrap">
           {data.subject_codes.map((code) => (

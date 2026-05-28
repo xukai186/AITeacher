@@ -8,6 +8,9 @@ import PackagesList from "@/pages/admin/PackagesList";
 import MyStudents from "@/pages/staff/MyStudents";
 import Workspace from "@/pages/student/Workspace";
 import Placement from "@/pages/student/Placement";
+import SelfTests from "@/pages/student/SelfTests";
+import SelfTestPaper from "@/pages/student/SelfTestPaper";
+import WrongBook from "@/pages/student/WrongBook";
 
 export default function App() {
   return (
@@ -46,6 +49,9 @@ export default function App() {
       >
         <Route path="/student/workspace/*" element={<Workspace />} />
         <Route path="/student/placement/:paperId" element={<Placement />} />
+        <Route path="/student/self-tests" element={<SelfTests />} />
+        <Route path="/student/self-tests/:paperId" element={<SelfTestPaper />} />
+        <Route path="/student/wrong-book" element={<WrongBook />} />
       </Route>
 
       <Route path="*" element={<Navigate to="/login" replace />} />
