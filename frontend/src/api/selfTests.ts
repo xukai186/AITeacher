@@ -34,6 +34,12 @@ export type SelfTestSubmitOut = {
   detail_json: Record<string, unknown>;
 };
 
+export type SelfTestGradeOut = {
+  submission_id: string;
+  total_score: number;
+  detail_json: Record<string, unknown>;
+};
+
 export function generateSelfTest(payload: SelfTestGenerateIn) {
   return api<SelfTestPaperSummaryOut>("/student/self-tests/generate", {
     method: "POST",
@@ -54,5 +60,9 @@ export function submitSelfTest(paperId: string, payload: SelfTestSubmitIn) {
     method: "POST",
     body: JSON.stringify(payload),
   });
+}
+
+export function getSelfTestSubmission(submissionId: string) {
+  return api<SelfTestGradeOut>(`/student/self-tests/submissions/${submissionId}`);
 }
 

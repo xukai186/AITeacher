@@ -38,7 +38,7 @@ export default function SelfTestPaper() {
           content: (answers[q.id] ?? "").trim(),
         })),
       }),
-    onSuccess: () => navigate("/student/wrong-book"),
+    onSuccess: (out) => navigate(`/student/self-tests/result/${out.submission_id}`),
   });
 
   if (paper.isLoading) return <p className="text-slate-500">加载中…</p>;
@@ -92,7 +92,7 @@ export default function SelfTestPaper() {
           }`}
           onClick={() => submit.mutate()}
         >
-          提交并查看错题
+          提交并查看结果
         </button>
       </div>
     </div>

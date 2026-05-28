@@ -10,6 +10,7 @@ import Workspace from "@/pages/student/Workspace";
 import Placement from "@/pages/student/Placement";
 import SelfTests from "@/pages/student/SelfTests";
 import SelfTestPaper from "@/pages/student/SelfTestPaper";
+import SelfTestResult from "@/pages/student/SelfTestResult";
 import WrongBook from "@/pages/student/WrongBook";
 
 export default function App() {
@@ -51,6 +52,7 @@ export default function App() {
         <Route path="/student/placement/:paperId" element={<Placement />} />
         <Route path="/student/self-tests" element={<SelfTests />} />
         <Route path="/student/self-tests/:paperId" element={<SelfTestPaper />} />
+        <Route path="/student/self-tests/result/:submissionId" element={<SelfTestResult />} />
         <Route path="/student/wrong-book" element={<WrongBook />} />
       </Route>
 
