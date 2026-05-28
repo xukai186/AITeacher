@@ -7,6 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field
 class ReportWeakNodeOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     knowledge_node_id: uuid.UUID | None
+    knowledge_node_name: str | None = None
     wrong_count: int = Field(ge=0)
     total_count: int = Field(ge=0)
 

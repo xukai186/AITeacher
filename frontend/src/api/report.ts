@@ -2,6 +2,7 @@ import { api } from "./client";
 
 export type ReportWeakNodeOut = {
   knowledge_node_id: string | null;
+  knowledge_node_name?: string | null;
   wrong_count: number;
   total_count: number;
 };
