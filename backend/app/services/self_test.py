@@ -120,9 +120,22 @@ class SelfTestService:
         return paper
 
     @staticmethod
+    def get_grade(db: Session, student_user_id: uuid.UUID, submission_id: uuid.UUID) -> SelfTestGrade:
+        submission = db.get(SelfTestSubmission, submission_id)
+        if submission is None or submission.student_user_id != student_user_id:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "submission not found")
+        grade = db.execute(
+            select(SelfTestGrade).where(SelfTestGrade.submission_id == submission_id)
+        ).scalar_one_or_none()
+        if grade is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "grade not found")
+        return grade
+
+    @staticmethod
     def submit(
         db: Session,
         student_user_id: uuid.UUID,
+        org_id: uuid.UUID,
         paper_id: uuid.UUID,
         payload: SelfTestSubmitIn,
     ) -> SelfTestGrade:
@@ -169,7 +182,7 @@ class SelfTestService:
                 score, is_correct = GradingService.grade_objective(q, a.content)
                 detail = {"mode": "objective", "is_correct": is_correct}
             else:
-                score, detail = grader.grade_subjective(q, a.content)
+                score, detail = grader.grade_subjective(db, org_id, q, a.content)
                 is_correct = False
 
             total_score += score

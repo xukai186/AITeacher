@@ -51,3 +51,11 @@ class SelfTestSubmitOut(BaseModel):
     total_score: int
     detail_json: dict
 
+
+class SelfTestGradeOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    submission_id: uuid.UUID
+    total_score: int
+    detail_json: dict
+

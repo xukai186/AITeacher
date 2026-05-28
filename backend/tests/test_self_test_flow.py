@@ -1,7 +1,7 @@
 from sqlalchemy import select
 
 from app.auth.security import hash_password
-from app.models import SelfTestGrade, SelfTestPaper, SelfTestQuestion, SelfTestSubmission, StudentProfile, StudentSubject, UserRole
+from app.models import ModelPolicy, SelfTestGrade, SelfTestPaper, SelfTestQuestion, SelfTestSubmission, StudentProfile, StudentSubject, UserRole
 from tests.factories import make_org, make_user
 
 
@@ -86,16 +86,37 @@ def test_student_can_submit_self_test_and_get_grade(client, db_session):
     assert db_session.query(SelfTestSubmission).count() == 1
     assert db_session.query(SelfTestGrade).count() == 1
 
+    submission_id = out["submission_id"]
+    grade = client.get(
+        f"/student/self-tests/submissions/{submission_id}",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert grade.status_code == 200
+    assert grade.json()["submission_id"] == submission_id
+
 
 def test_student_can_submit_subjective_self_test_question(client, db_session, monkeypatch):
-    _seed_student(db_session)
+    student = _seed_student(db_session)
     token = _token(client)
+
+    db_session.add(
+        ModelPolicy(
+            org_id=student.org_id,
+            scene="grading",
+            provider="openai_compat",
+            model="gpt-test",
+            params={"base_url": "https://example.invalid", "api_key": "k"},
+        )
+    )
+    db_session.commit()
 
     called = {"ok": False}
     import app.services.model_gateway as mg
 
     def fake_generate(self, req):
         assert req.scene == "grading"
+        assert req.provider == "openai_compat"
+        assert req.model == "gpt-test"
         called["ok"] = True
         return mg.ModelGatewayResponse(text='{"score": 1, "feedback": "ok"}')
 

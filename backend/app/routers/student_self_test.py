@@ -9,6 +9,7 @@ from app.database import get_db
 from app.models import SelfTestQuestion, User, UserRole
 from app.schemas.self_test import (
     SelfTestGenerateIn,
+    SelfTestGradeOut,
     SelfTestPaperDetailOut,
     SelfTestPaperSummaryOut,
     SelfTestQuestionOut,
@@ -81,8 +82,22 @@ def submit_self_test(
     db: Session = Depends(get_db),
     student: User = Depends(require_roles(UserRole.student)),
 ) -> SelfTestSubmitOut:
-    grade = SelfTestService.submit(db, student.id, paper_id, payload)
+    grade = SelfTestService.submit(db, student.id, student.org_id, paper_id, payload)
     return SelfTestSubmitOut(
+        submission_id=grade.submission_id,
+        total_score=grade.total_score,
+        detail_json=grade.detail_json,
+    )
+
+
+@router.get("/submissions/{submission_id}", response_model=SelfTestGradeOut)
+def get_self_test_submission_grade(
+    submission_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    student: User = Depends(require_roles(UserRole.student)),
+) -> SelfTestGradeOut:
+    grade = SelfTestService.get_grade(db, student.id, submission_id)
+    return SelfTestGradeOut(
         submission_id=grade.submission_id,
         total_score=grade.total_score,
         detail_json=grade.detail_json,

@@ -2,6 +2,10 @@ from __future__ import annotations
 
 import json
 
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from app.models import ModelPolicy
 from app.models import SelfTestQuestion
 from app.services.model_gateway import ModelGateway, ModelGatewayRequest
 
@@ -17,7 +21,26 @@ class GradingService:
         score = int(question.points) if is_correct else 0
         return score, is_correct
 
-    def grade_subjective(self, question: SelfTestQuestion, content: str) -> tuple[int, dict]:
+    def grade_subjective(
+        self,
+        db: Session,
+        org_id,
+        question: SelfTestQuestion,
+        content: str,
+    ) -> tuple[int, dict]:
+        policy = (
+            db.execute(
+                select(ModelPolicy).where(
+                    ModelPolicy.org_id == org_id,
+                    ModelPolicy.scene == "grading",
+                )
+            )
+            .scalar_one_or_none()
+        )
+        provider = policy.provider if policy is not None else "mock"
+        model = policy.model if policy is not None else "mock-v1"
+        params = policy.params if policy is not None else {}
+
         prompt = "\n".join(
             [
                 "You are an exam grader. Return STRICT JSON only.",
@@ -31,11 +54,11 @@ class GradingService:
         )
         resp = self._gw.generate(
             ModelGatewayRequest(
-                provider="mock",
-                model="mock-v1",
+                provider=provider,
+                model=model,
                 scene="grading",
                 prompt=prompt,
-                params={},
+                params=params,
             )
         )
         try:
