@@ -10,7 +10,9 @@ from app.routers import (
     chat as chat_router,
     me as me_router,
     staff_students,
+    student_placement,
     student_profile,
+    student_tasks,
 )
 
 app = FastAPI(title="AITeacher API", version="0.1.0")
@@ -30,6 +32,8 @@ app.include_router(admin_packages.router)
 app.include_router(admin_model_policy.router)
 app.include_router(staff_students.router)
 app.include_router(student_profile.router)
+app.include_router(student_placement.router)
+app.include_router(student_tasks.router)
 
 
 @app.get("/health")
