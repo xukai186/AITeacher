@@ -81,3 +81,7 @@ def test_student_can_get_report_overview(client, db_session):
     assert "recommendations" in body
     assert len(body["recommendations"]) >= 1
 
+    assert "last_7d" in body
+    assert "wrong_added" in body["last_7d"]
+    assert body["last_7d"]["wrong_added"] >= 1
+

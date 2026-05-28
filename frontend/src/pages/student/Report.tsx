@@ -105,6 +105,12 @@ export default function Report() {
             )}
           </div>
           <div className="bg-white shadow rounded p-4 space-y-2 md:col-span-2">
+            <div className="font-medium">近 7 天</div>
+            <div className="text-sm text-slate-700">
+              新增错题：{overview.data?.last_7d?.wrong_added ?? 0}
+            </div>
+          </div>
+          <div className="bg-white shadow rounded p-4 space-y-2 md:col-span-2">
             <div className="font-medium">自测趋势</div>
             {(overview.data?.self_test_trend ?? []).length === 0 ? (
               <div className="text-sm text-slate-500">暂无自测记录。</div>

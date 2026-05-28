@@ -52,6 +52,12 @@ function mockFetch() {
                 knowledge_node_id: "n1",
               },
             ],
+            last_7d: {
+              wrong_added: 3,
+              wrong_source_counts: { self_test: 2, placement: 1 },
+              self_test_count: 1,
+              self_test_avg_score: 8,
+            },
           }),
           { status: 200 },
         );
@@ -93,6 +99,8 @@ describe("Report page", () => {
     await waitFor(() => expect(screen.getByText("8 分")).toBeTruthy());
     await waitFor(() => expect(screen.getByText("查看结果")).toBeTruthy());
     await waitFor(() => expect(screen.getByText("查看错题")).toBeTruthy());
+    await waitFor(() => expect(screen.getByText("近 7 天")).toBeTruthy());
+    await waitFor(() => expect(screen.getByText("新增错题：3")).toBeTruthy());
   });
 });
 

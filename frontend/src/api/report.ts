@@ -25,6 +25,12 @@ export type ReportOverviewOut = {
     subject_code: string | null;
     knowledge_node_id: string | null;
   }>;
+  last_7d?: {
+    wrong_added: number;
+    wrong_source_counts: Record<string, number>;
+    self_test_count: number;
+    self_test_avg_score: number | null;
+  };
 };
 
 export function fetchStudentReportOverview(params?: {
