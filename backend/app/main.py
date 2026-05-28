@@ -10,6 +10,7 @@ from app.routers import (
     chat as chat_router,
     me as me_router,
     staff_students,
+    student_placement,
     student_profile,
 )
 
@@ -30,6 +31,7 @@ app.include_router(admin_packages.router)
 app.include_router(admin_model_policy.router)
 app.include_router(staff_students.router)
 app.include_router(student_profile.router)
+app.include_router(student_placement.router)
 
 
 @app.get("/health")
