@@ -36,3 +36,18 @@ class SelfTestQuestionOut(BaseModel):
 class SelfTestPaperDetailOut(SelfTestPaperSummaryOut):
     questions: list[SelfTestQuestionOut]
 
+
+class SelfTestAnswerIn(BaseModel):
+    question_id: uuid.UUID
+    content: str = Field(min_length=1, max_length=8000)
+
+
+class SelfTestSubmitIn(BaseModel):
+    answers: list[SelfTestAnswerIn]
+
+
+class SelfTestSubmitOut(BaseModel):
+    submission_id: uuid.UUID
+    total_score: int
+    detail_json: dict
+

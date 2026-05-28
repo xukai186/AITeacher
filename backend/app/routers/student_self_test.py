@@ -12,6 +12,8 @@ from app.schemas.self_test import (
     SelfTestPaperDetailOut,
     SelfTestPaperSummaryOut,
     SelfTestQuestionOut,
+    SelfTestSubmitIn,
+    SelfTestSubmitOut,
 )
 from app.services.self_test import SelfTestService
 
@@ -69,5 +71,20 @@ def get_self_test(
             )
             for q in questions
         ],
+    )
+
+
+@router.post("/{paper_id}/submit", response_model=SelfTestSubmitOut)
+def submit_self_test(
+    paper_id: uuid.UUID,
+    payload: SelfTestSubmitIn,
+    db: Session = Depends(get_db),
+    student: User = Depends(require_roles(UserRole.student)),
+) -> SelfTestSubmitOut:
+    grade = SelfTestService.submit(db, student.id, paper_id, payload)
+    return SelfTestSubmitOut(
+        submission_id=grade.submission_id,
+        total_score=grade.total_score,
+        detail_json=grade.detail_json,
     )
 

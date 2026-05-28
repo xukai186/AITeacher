@@ -4,10 +4,20 @@ import hashlib
 import uuid
 
 from fastapi import HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.models import SelfTestPaper, SelfTestQuestion, StudentSubject, SyllabusNode
+from app.models import (
+    SelfTestAnswer,
+    SelfTestGrade,
+    SelfTestPaper,
+    SelfTestQuestion,
+    SelfTestSubmission,
+    StudentSubject,
+    SyllabusNode,
+)
+from app.schemas.self_test import SelfTestSubmitIn
+from app.services.grading import GradingService
 from app.seed_syllabus import seed_minimal_syllabus
 
 QUESTIONS_PER_PAPER = 10
@@ -107,4 +117,85 @@ class SelfTestService:
         if paper is None or paper.student_user_id != student_user_id:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "paper not found")
         return paper
+
+    @staticmethod
+    def submit(
+        db: Session,
+        student_user_id: uuid.UUID,
+        paper_id: uuid.UUID,
+        payload: SelfTestSubmitIn,
+    ) -> SelfTestGrade:
+        paper = db.get(SelfTestPaper, paper_id)
+        if paper is None or paper.student_user_id != student_user_id:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "paper not found")
+
+        existing = db.execute(
+            select(SelfTestSubmission.id).where(
+                SelfTestSubmission.paper_id == paper_id,
+                SelfTestSubmission.student_user_id == student_user_id,
+            )
+        ).scalar_one_or_none()
+        if existing is not None:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "already submitted")
+
+        submission = SelfTestSubmission(
+            paper_id=paper_id,
+            student_user_id=student_user_id,
+            status="submitted",
+            submitted_at=func.now(),
+        )
+        db.add(submission)
+        db.flush()
+
+        questions = {
+            q.id: q
+            for q in db.execute(select(SelfTestQuestion).where(SelfTestQuestion.paper_id == paper_id))
+            .scalars()
+            .all()
+        }
+        if not questions:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "paper has no questions")
+
+        total_score = 0
+        per_q: list[dict] = []
+        grader = GradingService()
+        for a in payload.answers:
+            q = questions.get(a.question_id)
+            if q is None:
+                raise HTTPException(status.HTTP_400_BAD_REQUEST, "invalid question_id")
+
+            if q.q_type in ("single_choice", "multi_choice", "fill_blank"):
+                score, is_correct = GradingService.grade_objective(q, a.content)
+                detail = {"mode": "objective", "is_correct": is_correct}
+            else:
+                score, detail = grader.grade_subjective(q, a.content)
+                is_correct = False
+
+            total_score += score
+            per_q.append(
+                {
+                    "question_id": str(q.id),
+                    "seq": q.seq,
+                    "score": score,
+                    "points": q.points,
+                    "detail": detail,
+                }
+            )
+
+            db.add(
+                SelfTestAnswer(
+                    submission_id=submission.id,
+                    question_id=q.id,
+                    content=a.content,
+                )
+            )
+
+        grade = SelfTestGrade(
+            submission_id=submission.id,
+            total_score=total_score,
+            detail_json={"questions": per_q},
+        )
+        db.add(grade)
+        db.commit()
+        return grade
 
