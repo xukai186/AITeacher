@@ -18,6 +18,13 @@ export type ReportOverviewOut = {
     total_score: number;
     created_at: string;
   }>;
+  recommendations?: Array<{
+    type: string;
+    title: string;
+    detail: string;
+    subject_code: string | null;
+    knowledge_node_id: string | null;
+  }>;
 };
 
 export function fetchStudentReportOverview(params?: {

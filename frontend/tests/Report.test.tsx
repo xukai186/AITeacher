@@ -35,6 +35,15 @@ function mockFetch() {
               },
             ],
             self_test_trend: [],
+            recommendations: [
+              {
+                type: "review_wrong",
+                title: "优先复习：阅读理解",
+                detail: "先把错题重做一轮。",
+                subject_code: "english",
+                knowledge_node_id: "n1",
+              },
+            ],
           }),
           { status: 200 },
         );
@@ -70,6 +79,8 @@ describe("Report page", () => {
     await waitFor(() => expect(screen.getByText("学情报告")).toBeTruthy());
     await waitFor(() => expect(screen.getByText("错题来源")).toBeTruthy());
     await waitFor(() => expect(screen.getByText("阅读理解：3")).toBeTruthy());
+    await waitFor(() => expect(screen.getByText("建议")).toBeTruthy());
+    await waitFor(() => expect(screen.getByText("优先复习：阅读理解")).toBeTruthy());
   });
 });
 

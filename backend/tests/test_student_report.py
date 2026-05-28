@@ -78,3 +78,6 @@ def test_student_can_get_report_overview(client, db_session):
     if first["knowledge_node_id"] is not None:
         assert first["knowledge_node_name"]
 
+    assert "recommendations" in body
+    assert len(body["recommendations"]) >= 1
+
