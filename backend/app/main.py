@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.routers import (
+    admin_model_policy,
     admin_packages,
     admin_staff,
     admin_students,
@@ -24,6 +25,7 @@ app.include_router(me_router.router)
 app.include_router(admin_students.router)
 app.include_router(admin_staff.router)
 app.include_router(admin_packages.router)
+app.include_router(admin_model_policy.router)
 app.include_router(staff_students.router)
 app.include_router(student_profile.router)
 
