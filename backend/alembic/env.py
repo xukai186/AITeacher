@@ -19,6 +19,7 @@ import app.models.placement  # noqa: F401
 import app.models.mastery  # noqa: F401
 import app.models.plan  # noqa: F401
 import app.models.task  # noqa: F401
+import app.models.placement_submission  # noqa: F401
 
 config = context.config
 if config.config_file_name is not None:

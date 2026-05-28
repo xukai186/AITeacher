@@ -7,28 +7,28 @@ from sqlalchemy.orm import Session
 from app.database import SessionLocal
 from app.models import SyllabusNode
 
-# subject_code -> (root title, [(child title, child code), ...])
-_MINIMAL_SYLLABUS: dict[str, tuple[str, list[tuple[str, str]]]] = {
-    "english": ("英语", [("阅读", "reading"), ("翻译", "translation"), ("写作", "writing")]),
-    "math": ("数学", [("高数", "calculus"), ("线代", "linear_algebra"), ("概率", "probability")]),
+# subject_code -> (root name, [child names...])
+_MINIMAL_SYLLABUS: dict[str, tuple[str, list[str]]] = {
+    "english": ("英语", ["阅读", "翻译", "写作"]),
+    "math": ("数学", ["高数", "线代", "概率"]),
     "politics": (
         "政治",
         [
-            ("马原", "marxism"),
-            ("毛中特", "mao_thought"),
-            ("史纲", "history"),
-            ("思修", "ethics"),
+            "马原",
+            "毛中特",
+            "史纲",
+            "思修",
         ],
     ),
 }
 
 
 def _find_node(
-    db: Session, subject_code: str, parent_id, title: str
+    db: Session, subject_code: str, parent_id, name: str
 ) -> SyllabusNode | None:
     stmt = select(SyllabusNode).where(
         SyllabusNode.subject_code == subject_code,
-        SyllabusNode.title == title,
+        SyllabusNode.name == name,
     )
     if parent_id is None:
         stmt = stmt.where(SyllabusNode.parent_id.is_(None))
@@ -38,16 +38,16 @@ def _find_node(
 
 
 def _ensure_node(
-    db: Session, subject_code: str, parent_id, title: str, code: str
+    db: Session, subject_code: str, parent_id, name: str, weight: int
 ) -> SyllabusNode:
-    existing = _find_node(db, subject_code, parent_id, title)
+    existing = _find_node(db, subject_code, parent_id, name)
     if existing is not None:
         return existing
     node = SyllabusNode(
         subject_code=subject_code,
         parent_id=parent_id,
-        title=title,
-        code=code,
+        name=name,
+        weight=weight,
     )
     db.add(node)
     db.flush()
@@ -56,15 +56,9 @@ def _ensure_node(
 
 def seed_minimal_syllabus(db: Session) -> None:
     for subject_code, (root_title, children) in _MINIMAL_SYLLABUS.items():
-        root = _ensure_node(db, subject_code, None, root_title, subject_code)
-        for child_title, child_code in children:
-            _ensure_node(
-                db,
-                subject_code,
-                root.id,
-                child_title,
-                f"{subject_code}.{child_code}",
-            )
+        root = _ensure_node(db, subject_code, None, root_title, weight=1)
+        for child_name in children:
+            _ensure_node(db, subject_code, root.id, child_name, weight=1)
 
 
 def main() -> None:

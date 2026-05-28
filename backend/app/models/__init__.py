@@ -5,7 +5,8 @@ from app.models.model_policy import ModelPolicy
 from app.models.mastery import MasterySnapshot
 from app.models.organization import Organization
 from app.models.package import Package
-from app.models.placement import PlacementPaper
+from app.models.placement import PlacementPaper, PlacementQuestion
+from app.models.placement_submission import PlacementAnswer, PlacementResult, PlacementSubmission
 from app.models.plan import MasterPlan, MasterPlanVersion, SubjectPlan, SubjectPlanVersion
 from app.models.staff_student import StaffStudent
 from app.models.student import StudentProfile, StudentSubject
@@ -26,7 +27,11 @@ __all__ = [
     "MasterySnapshot",
     "Organization",
     "Package",
+    "PlacementAnswer",
     "PlacementPaper",
+    "PlacementQuestion",
+    "PlacementResult",
+    "PlacementSubmission",
     "StaffStudent",
     "StudentProfile",
     "StudentSubject",

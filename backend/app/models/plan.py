@@ -1,6 +1,5 @@
 import uuid
 from datetime import datetime
-from typing import Any
 
 from sqlalchemy import DateTime, ForeignKey, Integer, String, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import JSONB, UUID
@@ -16,9 +15,8 @@ class MasterPlan(Base):
     student_user_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
     )
-
-    weekly_goals_json: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
-    daily_time_budget_json: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    status: Mapped[str] = mapped_column(String(40), nullable=False, default="active")
+    current_version_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
@@ -34,8 +32,10 @@ class MasterPlanVersion(Base):
         UUID(as_uuid=True), ForeignKey("master_plans.id", ondelete="CASCADE"), nullable=False
     )
     version: Mapped[int] = mapped_column(Integer, nullable=False)
+    source: Mapped[str] = mapped_column(String(40), nullable=False, default="ai")
 
-    phases_json: Mapped[list[dict[str, Any]] | None] = mapped_column(JSONB, nullable=True)
+    weekly_goals_json: Mapped[list[dict] | None] = mapped_column(JSONB, nullable=True)
+    daily_time_budget_json: Mapped[list[dict] | None] = mapped_column(JSONB, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
@@ -50,6 +50,7 @@ class SubjectPlan(Base):
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
     )
     subject_code: Mapped[str] = mapped_column(String(40), nullable=False)
+    current_version_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
@@ -65,9 +66,9 @@ class SubjectPlanVersion(Base):
         UUID(as_uuid=True), ForeignKey("subject_plans.id", ondelete="CASCADE"), nullable=False
     )
     version: Mapped[int] = mapped_column(Integer, nullable=False)
+    source: Mapped[str] = mapped_column(String(40), nullable=False, default="ai")
 
-    weekly_goals_json: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
-    phases_json: Mapped[list[dict[str, Any]] | None] = mapped_column(JSONB, nullable=True)
+    phases_json: Mapped[list[dict] | None] = mapped_column(JSONB, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
