@@ -1,6 +1,5 @@
 import uuid
 from datetime import datetime
-from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -56,5 +55,5 @@ class PlacementSubmitIn(BaseModel):
 
 class PlacementSubmitOut(BaseModel):
     paper_id: uuid.UUID
-    total_score: float
-    mastery_json: dict[str, Any]
+    total_score: int
+    mastery_json: dict

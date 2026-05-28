@@ -6,7 +6,13 @@ from sqlalchemy.orm import Session
 from app.auth.permissions import require_roles
 from app.database import get_db
 from app.models import User, UserRole
-from app.schemas.placement import PlacementPaperDetail, PlacementPaperSummary, PlacementStartOut
+from app.schemas.placement import (
+    PlacementPaperDetail,
+    PlacementPaperSummary,
+    PlacementStartOut,
+    PlacementSubmitIn,
+    PlacementSubmitOut,
+)
 from app.services.placement import PlacementService
 
 router = APIRouter(prefix="/student/placement", tags=["student-placement"])
@@ -35,3 +41,13 @@ def get_placement_paper(
     student: User = Depends(require_roles(UserRole.student)),
 ) -> PlacementPaperDetail:
     return PlacementService.get_paper(db, student.id, paper_id)
+
+
+@router.post("/{paper_id}/submit", response_model=PlacementSubmitOut)
+def submit_placement(
+    paper_id: uuid.UUID,
+    payload: PlacementSubmitIn,
+    db: Session = Depends(get_db),
+    student: User = Depends(require_roles(UserRole.student)),
+) -> PlacementSubmitOut:
+    return PlacementService.submit(db, student.id, paper_id, payload)
