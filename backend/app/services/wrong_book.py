@@ -76,11 +76,19 @@ class WrongBookService:
 
     @staticmethod
     def list_items(
-        db: Session, student_user_id: uuid.UUID, subject_code: str | None = None
+        db: Session,
+        student_user_id: uuid.UUID,
+        subject_code: str | None = None,
+        source_type: str | None = None,
+        limit: int = 50,
+        offset: int = 0,
     ) -> list[WrongBookItem]:
         stmt = select(WrongBookItem).where(WrongBookItem.student_user_id == student_user_id)
         if subject_code:
             stmt = stmt.where(WrongBookItem.subject_code == subject_code)
+        if source_type:
+            stmt = stmt.where(WrongBookItem.source_type == source_type)
         stmt = stmt.order_by(WrongBookItem.created_at.desc())
+        stmt = stmt.limit(limit).offset(offset)
         return db.execute(stmt).scalars().all()
 
