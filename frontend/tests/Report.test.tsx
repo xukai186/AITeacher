@@ -91,6 +91,7 @@ describe("Report page", () => {
     await waitFor(() => expect(screen.getByText("优先复习：阅读理解")).toBeTruthy());
     await waitFor(() => expect(screen.getByText("自测趋势")).toBeTruthy());
     await waitFor(() => expect(screen.getByText("8 分")).toBeTruthy());
+    await waitFor(() => expect(screen.getByText("查看结果")).toBeTruthy());
   });
 });
 
