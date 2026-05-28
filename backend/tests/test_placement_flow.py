@@ -1,7 +1,7 @@
 from sqlalchemy import select
 
 from app.auth.security import hash_password
-from app.models import MasterPlan, MasterPlanVersion, MasterySnapshot, PlacementPaper, PlacementQuestion, PlacementResult, StudentProfile, StudentSubject, SubjectPlan, SubjectPlanVersion, UserRole, DailyTask
+from app.models import DailyTask, MasterPlan, MasterPlanVersion, MasterySnapshot, PlacementPaper, PlacementQuestion, PlacementResult, StudentProfile, StudentSubject, SubjectPlan, SubjectPlanVersion, UserRole, WrongBookItem
 from tests.factories import make_org, make_user
 
 
@@ -66,3 +66,30 @@ def test_student_can_submit_placement_and_get_result(client, db_session):
     assert db_session.query(SubjectPlan).count() >= 1
     assert db_session.query(SubjectPlanVersion).count() >= 1
     assert db_session.query(DailyTask).count() >= 1
+
+
+def test_wrong_book_ingested_after_placement_submit(client, db_session):
+    _seed_student(db_session)
+    token = _token(client)
+    start = client.post("/student/placement/start", headers={"Authorization": f"Bearer {token}"})
+    assert start.status_code == 200
+
+    paper_id = client.get("/student/placement", headers={"Authorization": f"Bearer {token}"}).json()[0]["id"]
+
+    questions = (
+        db_session.execute(select(PlacementQuestion).where(PlacementQuestion.paper_id == paper_id))
+        .scalars()
+        .all()
+    )
+    assert questions
+
+    payload = {"answers": [{"question_id": str(q.id), "content": "Z"} for q in questions]}
+    submit = client.post(
+        f"/student/placement/{paper_id}/submit",
+        json=payload,
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert submit.status_code == 200
+
+    items = db_session.execute(select(WrongBookItem).where(WrongBookItem.source_type == "placement")).scalars().all()
+    assert len(items) > 0

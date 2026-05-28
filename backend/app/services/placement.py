@@ -22,6 +22,7 @@ from app.schemas.placement import (
 from app.services.mastery import MasteryService
 from app.services.planning import PlanningService
 from app.services.tasks import TaskGenerator
+from app.services.wrong_book import WrongBookService
 from app.seed_syllabus import seed_minimal_syllabus
 
 QUESTIONS_PER_SUBJECT = 10
@@ -305,6 +306,9 @@ class PlacementService:
 
         PlanningService().create_initial_plans(db, student_user_id=student_user_id)
         TaskGenerator().generate_next_7_days(db, student_user_id=student_user_id, today=date.today())
+
+        db.flush()
+        WrongBookService.ingest_from_placement_submission(db, submission.id)
 
         db.commit()
         return PlacementSubmitOut(
