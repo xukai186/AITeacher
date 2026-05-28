@@ -18,6 +18,7 @@ from app.schemas.placement import (
     PlacementStartOut,
     PlacementSubjectStatus,
 )
+from app.services.mastery import MasteryService
 from app.seed_syllabus import seed_minimal_syllabus
 
 QUESTIONS_PER_SUBJECT = 10
@@ -238,7 +239,7 @@ class PlacementService:
             db.flush()
 
         total_score = 0
-        mastery_agg: dict[str, dict[str, int]] = {}
+        correct_by_node: dict[uuid.UUID, tuple[int, int]] = {}
         for ans in payload.answers:
             q = questions.get(ans.question_id)
             if q is None:
@@ -258,45 +259,53 @@ class PlacementService:
             )
 
             if q.knowledge_node_id is not None:
-                key = str(q.knowledge_node_id)
-                slot = mastery_agg.setdefault(key, {"correct": 0, "total": 0})
-                slot["total"] += 1
-                if is_correct:
-                    slot["correct"] += 1
+                prev_correct, prev_total = correct_by_node.get(q.knowledge_node_id, (0, 0))
+                correct_by_node[q.knowledge_node_id] = (
+                    prev_correct + (1 if is_correct else 0),
+                    prev_total + 1,
+                )
+
+        mastery_levels = MasteryService.placement_levels(correct_by_node)
 
         result = db.execute(
             select(PlacementResult).where(PlacementResult.paper_id == paper_id)
         ).scalar_one_or_none()
         if result is None:
-            result = PlacementResult(paper_id=paper_id, total_score=total_score, mastery_json=mastery_agg)
+            result = PlacementResult(
+                paper_id=paper_id,
+                total_score=total_score,
+                mastery_json=mastery_levels,
+            )
             db.add(result)
         else:
             result.total_score = total_score
-            result.mastery_json = mastery_agg
+            result.mastery_json = mastery_levels
 
-        latest_version = (
-            db.execute(
-                select(MasterySnapshot.version)
-                .where(
-                    MasterySnapshot.student_user_id == student_user_id,
-                    MasterySnapshot.subject_code == paper.subject_code,
-                )
-                .order_by(MasterySnapshot.version.desc())
-                .limit(1)
-            ).scalar_one_or_none()
-            or 0
-        )
+        existing = db.execute(
+            select(MasterySnapshot.id).where(
+                MasterySnapshot.student_user_id == student_user_id,
+                MasterySnapshot.subject_code == paper.subject_code,
+                MasterySnapshot.version == 1,
+            )
+        ).scalar_one_or_none()
+        if existing is not None:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "placement already submitted")
+
         db.add(
             MasterySnapshot(
                 student_user_id=student_user_id,
                 subject_code=paper.subject_code,
-                version=int(latest_version) + 1,
-                mastery_json=mastery_agg,
+                version=1,
+                mastery_json=mastery_levels,
             )
         )
 
         db.commit()
-        return PlacementSubmitOut(paper_id=paper_id, total_score=total_score, mastery_json=mastery_agg)
+        return PlacementSubmitOut(
+            paper_id=paper_id,
+            total_score=total_score,
+            mastery_json=mastery_levels,
+        )
 
     @staticmethod
     def _question_out(question: PlacementQuestion) -> PlacementQuestionOut:

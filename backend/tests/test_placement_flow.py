@@ -1,7 +1,7 @@
 from sqlalchemy import select
 
 from app.auth.security import hash_password
-from app.models import PlacementPaper, PlacementQuestion, StudentProfile, StudentSubject, UserRole
+from app.models import MasterySnapshot, PlacementPaper, PlacementQuestion, PlacementResult, StudentProfile, StudentSubject, UserRole
 from tests.factories import make_org, make_user
 
 
@@ -33,7 +33,9 @@ def test_student_can_submit_placement_and_get_result(client, db_session):
     token = _token(client)
     start = client.post("/student/placement/start", headers={"Authorization": f"Bearer {token}"})
     assert start.status_code == 200
-    paper_id = start.json()["subjects"][0]["paper_id"]
+
+    paper_id = client.get("/student/placement", headers={"Authorization": f"Bearer {token}"}).json()[0]["id"]
+    paper = client.get(f"/student/placement/{paper_id}", headers={"Authorization": f"Bearer {token}"}).json()
 
     questions = (
         db_session.execute(select(PlacementQuestion).where(PlacementQuestion.paper_id == paper_id))
@@ -57,3 +59,5 @@ def test_student_can_submit_placement_and_get_result(client, db_session):
     out = submit.json()
     assert out["paper_id"] == paper_id
     assert out["total_score"] > 0
+    assert db_session.query(PlacementResult).count() == 1
+    assert db_session.query(MasterySnapshot).count() == 1
