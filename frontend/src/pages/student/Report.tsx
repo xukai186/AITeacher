@@ -68,7 +68,7 @@ export default function Report() {
             <ul className="text-sm text-slate-700 space-y-1">
               {(overview.data?.weak_nodes ?? []).map((n, idx) => (
                 <li key={n.knowledge_node_id ?? `null-${idx}`}>
-                  {n.knowledge_node_id ?? "（未标注知识点）"}：{n.wrong_count}
+                  {n.knowledge_node_name ?? "（未标注知识点）"}：{n.wrong_count}
                 </li>
               ))}
             </ul>

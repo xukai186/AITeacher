@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.models import SelfTestGrade, SelfTestPaper, SelfTestSubmission, WrongBookItem
+from app.models import SelfTestGrade, SelfTestPaper, SelfTestSubmission, SyllabusNode, WrongBookItem
 from app.schemas.report import ReportOverviewOut, ReportTrendPointOut, ReportWeakNodeOut
 
 
@@ -31,9 +31,11 @@ class ReportService:
         source_counts = {k: int(v) for k, v in db.execute(source_counts_stmt).all()}
 
         weak_stmt = (
-            select(WrongBookItem.knowledge_node_id, func.count(WrongBookItem.id))
+            select(WrongBookItem.knowledge_node_id, SyllabusNode.name, func.count(WrongBookItem.id))
             .where(WrongBookItem.student_user_id == q.student_user_id)
+            .outerjoin(SyllabusNode, SyllabusNode.id == WrongBookItem.knowledge_node_id)
             .group_by(WrongBookItem.knowledge_node_id)
+            .group_by(SyllabusNode.name)
             .order_by(func.count(WrongBookItem.id).desc())
             .limit(q.weak_nodes_limit)
         )
@@ -42,10 +44,11 @@ class ReportService:
         weak_nodes = [
             ReportWeakNodeOut(
                 knowledge_node_id=node_id,
+                knowledge_node_name=node_name,
                 wrong_count=int(cnt),
                 total_count=int(cnt),
             )
-            for node_id, cnt in db.execute(weak_stmt).all()
+            for node_id, node_name, cnt in db.execute(weak_stmt).all()
         ]
 
         trend_stmt = (

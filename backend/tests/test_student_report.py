@@ -72,3 +72,9 @@ def test_student_can_get_report_overview(client, db_session):
     assert len(body["weak_nodes"]) >= 1
     assert len(body["self_test_trend"]) >= 1
 
+    # weak nodes should include readable knowledge node name (when available)
+    first = body["weak_nodes"][0]
+    assert "knowledge_node_name" in first
+    if first["knowledge_node_id"] is not None:
+        assert first["knowledge_node_name"]
+

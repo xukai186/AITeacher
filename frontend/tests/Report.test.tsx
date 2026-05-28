@@ -26,7 +26,14 @@ function mockFetch() {
           JSON.stringify({
             subject_code: "english",
             wrong_source_counts: { placement: 1, self_test: 2 },
-            weak_nodes: [{ knowledge_node_id: null, wrong_count: 3, total_count: 3 }],
+            weak_nodes: [
+              {
+                knowledge_node_id: "n1",
+                knowledge_node_name: "阅读理解",
+                wrong_count: 3,
+                total_count: 3,
+              },
+            ],
             self_test_trend: [],
           }),
           { status: 200 },
@@ -62,6 +69,7 @@ describe("Report page", () => {
     renderPage();
     await waitFor(() => expect(screen.getByText("学情报告")).toBeTruthy());
     await waitFor(() => expect(screen.getByText("错题来源")).toBeTruthy());
+    await waitFor(() => expect(screen.getByText("阅读理解：3")).toBeTruthy());
   });
 });
 
