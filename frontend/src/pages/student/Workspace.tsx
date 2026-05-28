@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { fetchStudentMe } from "@/api/me";
+import ChatPanel from "@/components/chat/ChatPanel";
 
 const SUBJECT_LABELS: Record<string, string> = {
   politics: "政治",
@@ -57,7 +58,11 @@ export default function Workspace() {
         <h2 className="font-semibold mb-3">
           {current ? `${SUBJECT_LABELS[current] ?? current} AI 老师` : "AI 老师"}
         </h2>
-        <p className="text-slate-500 text-sm">对话功能将在 P2 接入。</p>
+        {current ? (
+          <ChatPanel agentType="subject" subjectCode={current} />
+        ) : (
+          <p className="text-slate-500 text-sm">请先开通科目</p>
+        )}
       </aside>
     </div>
   );
