@@ -88,6 +88,21 @@ export default function Report() {
               </ul>
             )}
           </div>
+          <div className="bg-white shadow rounded p-4 space-y-2 md:col-span-2">
+            <div className="font-medium">自测趋势</div>
+            {(overview.data?.self_test_trend ?? []).length === 0 ? (
+              <div className="text-sm text-slate-500">暂无自测记录。</div>
+            ) : (
+              <ul className="text-sm text-slate-700 space-y-1">
+                {(overview.data?.self_test_trend ?? []).map((t) => (
+                  <li key={t.submission_id} className="flex justify-between">
+                    <span className="text-slate-600">{new Date(t.created_at).toLocaleString()}</span>
+                    <span className="font-medium text-slate-900">{t.total_score} 分</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
         </div>
       )}
     </div>
