@@ -14,6 +14,7 @@ from app.routers import (
     student_profile,
     student_self_test,
     student_tasks,
+    student_report,
     student_wrong_book,
 )
 
@@ -37,6 +38,7 @@ app.include_router(student_profile.router)
 app.include_router(student_placement.router)
 app.include_router(student_tasks.router)
 app.include_router(student_self_test.router)
+app.include_router(student_report.router)
 app.include_router(student_wrong_book.router)
 
 
