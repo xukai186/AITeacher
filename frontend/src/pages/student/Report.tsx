@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { Link } from "react-router-dom";
 import { fetchStudentMe } from "@/api/me";
 import { fetchStudentReportOverview } from "@/api/report";
 
@@ -95,9 +96,17 @@ export default function Report() {
             ) : (
               <ul className="text-sm text-slate-700 space-y-1">
                 {(overview.data?.self_test_trend ?? []).map((t) => (
-                  <li key={t.submission_id} className="flex justify-between">
+                  <li key={t.submission_id} className="flex justify-between items-center">
                     <span className="text-slate-600">{new Date(t.created_at).toLocaleString()}</span>
-                    <span className="font-medium text-slate-900">{t.total_score} 分</span>
+                    <div className="flex items-center gap-3">
+                      <span className="font-medium text-slate-900">{t.total_score} 分</span>
+                      <Link
+                        to={`/student/self-tests/result/${t.submission_id}`}
+                        className="text-slate-700 underline"
+                      >
+                        查看结果
+                      </Link>
+                    </div>
                   </li>
                 ))}
               </ul>
