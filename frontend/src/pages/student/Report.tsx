@@ -73,6 +73,21 @@ export default function Report() {
               ))}
             </ul>
           </div>
+          <div className="bg-white shadow rounded p-4 space-y-2 md:col-span-2">
+            <div className="font-medium">建议</div>
+            {(overview.data?.recommendations ?? []).length === 0 ? (
+              <div className="text-sm text-slate-500">暂无建议。</div>
+            ) : (
+              <ul className="text-sm text-slate-700 space-y-2">
+                {(overview.data?.recommendations ?? []).map((r, idx) => (
+                  <li key={`${r.type}-${idx}`} className="border-l-2 border-slate-200 pl-3">
+                    <div className="font-medium text-slate-900">{r.title}</div>
+                    <div className="text-slate-700">{r.detail}</div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
         </div>
       )}
     </div>

@@ -27,4 +27,5 @@ class ReportOverviewOut(BaseModel):
     wrong_source_counts: dict[str, int]
     weak_nodes: list[ReportWeakNodeOut]
     self_test_trend: list[ReportTrendPointOut]
+    recommendations: list[dict] = Field(default_factory=list)
 

@@ -20,6 +20,53 @@ class ReportQuery:
 
 class ReportService:
     @staticmethod
+    def _recommendations(
+        q: ReportQuery,
+        source_counts: dict[str, int],
+        weak_nodes: list[ReportWeakNodeOut],
+        trend: list[ReportTrendPointOut],
+    ) -> list[dict]:
+        recs: list[dict] = []
+
+        top = weak_nodes[0] if weak_nodes else None
+        if top is not None:
+            name = top.knowledge_node_name or "未标注知识点"
+            recs.append(
+                {
+                    "type": "review_wrong",
+                    "title": f"优先复习：{name}",
+                    "detail": f"该知识点近期错题较多（{top.wrong_count}）。建议先把对应错题重做一轮，再做一次同主题自测巩固。",
+                    "subject_code": q.subject_code,
+                    "knowledge_node_id": str(top.knowledge_node_id) if top.knowledge_node_id else None,
+                }
+            )
+
+        if source_counts.get("self_test", 0) > 0:
+            recs.append(
+                {
+                    "type": "self_test",
+                    "title": "安排一次自测检验",
+                    "detail": "完成错题复习后，建议生成一份自测卷进行检验，关注薄弱点是否改善。",
+                    "subject_code": q.subject_code,
+                    "knowledge_node_id": None,
+                }
+            )
+
+        if trend:
+            last = trend[0]
+            recs.append(
+                {
+                    "type": "check_result",
+                    "title": "回看最近一次自测解析",
+                    "detail": f"最近一次自测得分 {last.total_score}，建议回看错误题的解析与评分反馈，明确丢分原因。",
+                    "subject_code": q.subject_code,
+                    "knowledge_node_id": None,
+                }
+            )
+
+        return recs[:3]
+
+    @staticmethod
     def overview(db: Session, q: ReportQuery) -> ReportOverviewOut:
         source_counts_stmt = (
             select(WrongBookItem.source_type, func.count(WrongBookItem.id))
@@ -83,5 +130,6 @@ class ReportService:
             wrong_source_counts=source_counts,
             weak_nodes=weak_nodes,
             self_test_trend=trend,
+            recommendations=ReportService._recommendations(q, source_counts, weak_nodes, trend),
         )
 
