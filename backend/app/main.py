@@ -7,6 +7,7 @@ from app.routers import (
     admin_staff,
     admin_students,
     auth as auth_router,
+    chat as chat_router,
     me as me_router,
     staff_students,
     student_profile,
@@ -21,6 +22,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 app.include_router(auth_router.router)
+app.include_router(chat_router.router)
 app.include_router(me_router.router)
 app.include_router(admin_students.router)
 app.include_router(admin_staff.router)
