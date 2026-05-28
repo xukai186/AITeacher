@@ -12,8 +12,18 @@ export type WrongBookItemOut = {
   created_at: string;
 };
 
-export function listWrongBook(subjectCode?: string) {
-  const qs = subjectCode ? `?subject_code=${encodeURIComponent(subjectCode)}` : "";
+export function listWrongBook(params?: {
+  subject_code?: string;
+  source_type?: string;
+  limit?: number;
+  offset?: number;
+}) {
+  const qsParams = new URLSearchParams();
+  if (params?.subject_code) qsParams.set("subject_code", params.subject_code);
+  if (params?.source_type) qsParams.set("source_type", params.source_type);
+  if (typeof params?.limit === "number") qsParams.set("limit", String(params.limit));
+  if (typeof params?.offset === "number") qsParams.set("offset", String(params.offset));
+  const qs = qsParams.toString() ? `?${qsParams.toString()}` : "";
   return api<WrongBookItemOut[]>(`/student/wrong-book${qs}`);
 }
 
