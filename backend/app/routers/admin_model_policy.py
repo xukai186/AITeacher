@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -41,6 +41,11 @@ def upsert_model_policy(
     db: Session = Depends(get_db),
     admin: User = Depends(require_admin()),
 ) -> ModelPolicyOut:
+    if payload.scene != scene:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            "scene mismatch between path and payload",
+        )
     existing = db.execute(
         select(ModelPolicy).where(ModelPolicy.org_id == admin.org_id, ModelPolicy.scene == scene)
     ).scalar_one_or_none()
