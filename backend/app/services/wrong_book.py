@@ -5,10 +5,76 @@ import uuid
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models import SelfTestAnswer, SelfTestPaper, SelfTestQuestion, SelfTestSubmission, WrongBookItem
+from app.models import (
+    PlacementAnswer,
+    PlacementPaper,
+    PlacementQuestion,
+    PlacementSubmission,
+    SelfTestAnswer,
+    SelfTestPaper,
+    SelfTestQuestion,
+    SelfTestSubmission,
+    WrongBookItem,
+)
 
 
 class WrongBookService:
+    @staticmethod
+    def ingest_from_placement_submission(db: Session, submission_id: uuid.UUID) -> int:
+        submission = db.get(PlacementSubmission, submission_id)
+        if submission is None:
+            return 0
+        paper = db.get(PlacementPaper, submission.paper_id)
+        if paper is None:
+            return 0
+
+        answers = (
+            db.execute(select(PlacementAnswer).where(PlacementAnswer.submission_id == submission_id))
+            .scalars()
+            .all()
+        )
+        if not answers:
+            return 0
+
+        questions = {
+            q.id: q
+            for q in db.execute(select(PlacementQuestion).where(PlacementQuestion.paper_id == submission.paper_id))
+            .scalars()
+            .all()
+        }
+
+        created = 0
+        for ans in answers:
+            q = questions.get(ans.question_id)
+            if q is None:
+                continue
+            if ans.is_correct:
+                continue
+
+            db.add(
+                WrongBookItem(
+                    student_user_id=submission.student_user_id,
+                    subject_code=paper.subject_code,
+                    knowledge_node_id=q.knowledge_node_id,
+                    source_type="placement",
+                    source_id=submission.id,
+                    question_snapshot_json={
+                        "id": str(q.id),
+                        "seq": q.seq,
+                        "q_type": q.q_type,
+                        "stem": q.stem,
+                        "choices": q.choices_json,
+                        "points": q.points,
+                    },
+                    answer_snapshot_json={"content": ans.content},
+                    correct_snapshot_json={"answer_key": q.answer_key},
+                )
+            )
+            created += 1
+
+        db.flush()
+        return created
+
     @staticmethod
     def ingest_from_self_test_submission(db: Session, submission_id: uuid.UUID) -> int:
         submission = db.get(SelfTestSubmission, submission_id)
