@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+.pytest_cache/
+.coverage
+
+# Node
+node_modules/
+dist/
+.vite/
+*.tsbuildinfo
+vite.config.js
+vite.config.d.ts
+
+# Env
+.env
+.env.local
+
+# OS
+.DS_Store

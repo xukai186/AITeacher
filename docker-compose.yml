@@ -1,0 +1,14 @@
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: aiteacher
+      POSTGRES_PASSWORD: aiteacher
+      POSTGRES_DB: aiteacher
+    ports:
+      - "5433:5432"
+    volumes:
+      - aiteacher_pgdata:/var/lib/postgresql/data
+
+volumes:
+  aiteacher_pgdata:
