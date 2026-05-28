@@ -4,7 +4,6 @@ import ChatPanel from "../src/components/chat/ChatPanel";
 
 beforeEach(() => {
   vi.restoreAllMocks();
-  vi.unstubAllGlobals();
 });
 
 function mockFetchOnce(body: unknown) {

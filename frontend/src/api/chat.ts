@@ -12,9 +12,6 @@ export type ChatPostResponse = {
 };
 
 export function postChat(body: ChatPostRequest) {
-  return api<ChatPostResponse>("/chat", {
-    method: "POST",
-    body: JSON.stringify(body),
-  });
+  return api<ChatPostResponse>("/chat", { method: "POST", body: JSON.stringify(body) });
 }
 
