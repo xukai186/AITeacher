@@ -1,7 +1,11 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { fetchStudentMe } from "@/api/me";
+import { startPlacement } from "@/api/placement";
+import { fetchTodayTasks } from "@/api/tasks";
 import ChatPanel from "@/components/chat/ChatPanel";
+import { useMutation } from "@tanstack/react-query";
+import { useNavigate } from "react-router-dom";
 
 const SUBJECT_LABELS: Record<string, string> = {
   politics: "政治",
@@ -10,9 +14,23 @@ const SUBJECT_LABELS: Record<string, string> = {
 };
 
 export default function Workspace() {
+  const navigate = useNavigate();
   const { data, isLoading, error } = useQuery({
     queryKey: ["student", "me"],
     queryFn: fetchStudentMe,
+  });
+
+  const todayTasks = useQuery({
+    queryKey: ["student", "tasks", "today"],
+    queryFn: fetchTodayTasks,
+  });
+
+  const start = useMutation({
+    mutationFn: startPlacement,
+    onSuccess: (out) => {
+      const paperId = out.subjects[0]?.paper_id;
+      if (paperId) navigate(`/student/placement/${paperId}`);
+    },
   });
 
   const [activeSubject, setActiveSubject] = useState<string | null>(null);
@@ -30,6 +48,18 @@ export default function Workspace() {
           <h1 className="text-xl font-semibold">今日计划</h1>
           <div className="text-sm text-slate-500">考试年份：{data.exam_year}</div>
         </header>
+
+        <div className="flex justify-between items-center">
+          <div className="text-sm text-slate-600">摸底测评（P3）</div>
+          <button
+            className="px-3 py-1 rounded text-sm bg-slate-900 text-white disabled:bg-slate-200 disabled:text-slate-500"
+            disabled={start.isPending || data.subject_codes.length === 0}
+            onClick={() => start.mutate()}
+          >
+            开始摸底测评
+          </button>
+        </div>
+
         <div className="flex gap-2 flex-wrap">
           {data.subject_codes.map((code) => (
             <button
@@ -48,11 +78,33 @@ export default function Workspace() {
             <p className="text-slate-500 text-sm">尚未开通科目，请联系管理员</p>
           )}
         </div>
-        <p className="text-slate-500 text-sm">
-          {current
-            ? `${SUBJECT_LABELS[current] ?? current} 暂无今日任务（P3 将启用）。`
-            : "暂无今日任务。"}
-        </p>
+        {todayTasks.isLoading ? (
+          <p className="text-slate-500 text-sm">加载任务中…</p>
+        ) : todayTasks.error ? (
+          <p className="text-red-600 text-sm">{(todayTasks.error as Error).message}</p>
+        ) : (
+          <div className="space-y-2">
+            {(todayTasks.data?.tasks ?? []).length === 0 ? (
+              <p className="text-slate-500 text-sm">
+                {current ? `${SUBJECT_LABELS[current] ?? current} 暂无今日任务。` : "暂无今日任务。"}
+              </p>
+            ) : (
+              <ul className="space-y-2">
+                {(todayTasks.data?.tasks ?? [])
+                  .filter((t) => !current || t.subject_code === current)
+                  .map((t) => (
+                    <li key={t.id} className="border rounded p-3">
+                      <div className="flex justify-between text-sm">
+                        <div className="font-medium">{t.title}</div>
+                        <div className="text-slate-500">{t.status}</div>
+                      </div>
+                      <div className="text-xs text-slate-500 mt-1">预计 {t.est_minutes} 分钟</div>
+                    </li>
+                  ))}
+              </ul>
+            )}
+          </div>
+        )}
       </div>
       <aside className="col-span-5 bg-white shadow rounded p-6">
         <h2 className="font-semibold mb-3">

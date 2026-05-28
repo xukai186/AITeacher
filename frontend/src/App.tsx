@@ -7,6 +7,7 @@ import StaffList from "@/pages/admin/StaffList";
 import PackagesList from "@/pages/admin/PackagesList";
 import MyStudents from "@/pages/staff/MyStudents";
 import Workspace from "@/pages/student/Workspace";
+import Placement from "@/pages/student/Placement";
 
 export default function App() {
   return (
@@ -44,6 +45,7 @@ export default function App() {
         }
       >
         <Route path="/student/workspace/*" element={<Workspace />} />
+        <Route path="/student/placement/:paperId" element={<Placement />} />
       </Route>
 
       <Route path="*" element={<Navigate to="/login" replace />} />
