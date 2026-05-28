@@ -1,5 +1,3 @@
-import uuid
-
 from sqlalchemy import select
 
 from app.auth.security import hash_password
@@ -82,64 +80,4 @@ def test_student_can_list_wrong_book_items(client, db_session):
     resp = client.get("/student/wrong-book?subject_code=english", headers={"Authorization": f"Bearer {token}"})
     assert resp.status_code == 200
     assert len(resp.json()) > 0
-
-
-def test_wrong_book_supports_source_type_and_pagination(client, db_session):
-    student = _seed_student(db_session)
-    token = _token(client)
-
-    # create a placement-sourced item manually to test filtering
-    db_session.add(
-        WrongBookItem(
-            student_user_id=student.id,
-            subject_code="english",
-            knowledge_node_id=None,
-            source_type="placement",
-            source_id=uuid.uuid4(),
-            question_snapshot_json={"stem": "placement q"},
-            answer_snapshot_json={"content": "x"},
-            correct_snapshot_json={"answer_key": "y"},
-        )
-    )
-    db_session.commit()
-
-    gen = client.post(
-        "/student/self-tests/generate",
-        json={"subject_code": "english"},
-        headers={"Authorization": f"Bearer {token}"},
-    )
-    paper_id = gen.json()["id"]
-    paper = client.get(
-        f"/student/self-tests/{paper_id}",
-        headers={"Authorization": f"Bearer {token}"},
-    ).json()
-    answers = [{"question_id": q["id"], "content": "Z"} for q in paper["questions"]]
-    submit = client.post(
-        f"/student/self-tests/{paper_id}/submit",
-        json={"answers": answers},
-        headers={"Authorization": f"Bearer {token}"},
-    )
-    assert submit.status_code == 200
-
-    # filter by source_type=self_test
-    resp = client.get(
-        "/student/wrong-book?subject_code=english&source_type=self_test",
-        headers={"Authorization": f"Bearer {token}"},
-    )
-    assert resp.status_code == 200
-    assert all(i["source_type"] == "self_test" for i in resp.json())
-
-    # pagination
-    page1 = client.get(
-        "/student/wrong-book?subject_code=english&limit=2&offset=0",
-        headers={"Authorization": f"Bearer {token}"},
-    )
-    assert page1.status_code == 200
-    assert len(page1.json()) == 2
-    page2 = client.get(
-        "/student/wrong-book?subject_code=english&limit=2&offset=2",
-        headers={"Authorization": f"Bearer {token}"},
-    )
-    assert page2.status_code == 200
-    assert len(page2.json()) >= 0
 

@@ -22,10 +22,6 @@ function mockFetchWrongBook() {
         );
       }
       if (url.includes("/api/student/wrong-book")) {
-        const isPage2 = url.includes("offset=20");
-        if (isPage2) {
-          return new Response(JSON.stringify([]), { status: 200 });
-        }
         return new Response(
           JSON.stringify([
             {

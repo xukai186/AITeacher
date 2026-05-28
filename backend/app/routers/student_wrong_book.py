@@ -13,19 +13,9 @@ router = APIRouter(prefix="/student/wrong-book", tags=["student-wrong-book"])
 @router.get("", response_model=list[WrongBookItemOut])
 def list_wrong_book(
     subject_code: str | None = Query(default=None, max_length=40),
-    source_type: str | None = Query(default=None, max_length=40),
-    limit: int = Query(default=50, ge=1, le=200),
-    offset: int = Query(default=0, ge=0),
     db: Session = Depends(get_db),
     student: User = Depends(require_roles(UserRole.student)),
 ) -> list[WrongBookItemOut]:
-    items = WrongBookService.list_items(
-        db,
-        student.id,
-        subject_code=subject_code,
-        source_type=source_type,
-        limit=limit,
-        offset=offset,
-    )
+    items = WrongBookService.list_items(db, student.id, subject_code=subject_code)
     return [WrongBookItemOut.model_validate(i) for i in items]
 
