@@ -14,6 +14,7 @@ from app.routers import (
     student_profile,
     student_self_test,
     student_tasks,
+    student_wrong_book,
 )
 
 app = FastAPI(title="AITeacher API", version="0.1.0")
@@ -36,6 +37,7 @@ app.include_router(student_profile.router)
 app.include_router(student_placement.router)
 app.include_router(student_tasks.router)
 app.include_router(student_self_test.router)
+app.include_router(student_wrong_book.router)
 
 
 @app.get("/health")

@@ -18,6 +18,7 @@ from app.models import (
 )
 from app.schemas.self_test import SelfTestSubmitIn
 from app.services.grading import GradingService
+from app.services.wrong_book import WrongBookService
 from app.seed_syllabus import seed_minimal_syllabus
 
 QUESTIONS_PER_PAPER = 10
@@ -196,6 +197,9 @@ class SelfTestService:
             detail_json={"questions": per_q},
         )
         db.add(grade)
+
+        db.flush()
+        WrongBookService.ingest_from_self_test_submission(db, submission.id)
         db.commit()
         return grade
 
