@@ -10,3 +10,4 @@ class ChatPostRequest(BaseModel):
 class ChatPostResponse(BaseModel):
     session_id: str
     assistant_message: str
+    tools_used: list[str] = []

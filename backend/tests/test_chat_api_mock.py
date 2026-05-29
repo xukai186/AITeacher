@@ -29,6 +29,7 @@ def test_student_chat_creates_session_and_persists_messages(client, db_session):
     body = resp.json()
     assert body["session_id"]
     assert "mock" in body["assistant_message"]
+    assert body.get("tools_used") == []
 
     # second message should reuse same session scope
     resp2 = client.post(
@@ -37,4 +38,23 @@ def test_student_chat_creates_session_and_persists_messages(client, db_session):
         headers={"Authorization": f"Bearer {token}"},
     )
     assert resp2.status_code == 200
+
+
+def test_subject_chat_triggers_tool_loop(client, db_session):
+    _seed_student_and_policy(db_session)
+    token = _token(client, "student@demo.example")
+
+    resp = client.post(
+        "/chat",
+        json={
+            "agent_type": "subject",
+            "subject_code": "english",
+            "message": "帮我看看学情和薄弱点",
+        },
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert "get_subject_context" in body.get("tools_used", [])
+    assert body["assistant_message"]
 

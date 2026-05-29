@@ -1,0 +1,65 @@
+from __future__ import annotations
+
+from typing import Any
+
+# OpenAI-compatible tool schemas exposed to the chat model.
+SUBJECT_CHAT_TOOLS: list[dict[str, Any]] = [
+    {
+        "type": "function",
+        "function": {
+            "name": "get_subject_context",
+            "description": "读取当前科目的学情摘要（错题来源统计、薄弱点数量、建议条数）。",
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "generate_daily_tasks",
+            "description": (
+                "根据学情建议为学生生成指定日期的每日学习任务（幂等）。"
+                "默认生成明天的任务；包含错题复习、自测建议等。"
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "target_date": {
+                        "type": "string",
+                        "description": "任务日期，ISO 格式 YYYY-MM-DD；省略则为明天。",
+                    },
+                },
+                "required": [],
+            },
+        },
+    },
+]
+
+PLANNER_CHAT_TOOLS: list[dict[str, Any]] = [
+    {
+        "type": "function",
+        "function": {
+            "name": "get_subject_context",
+            "description": "读取指定科目的学情摘要（需提供 subject_code）。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "subject_code": {
+                        "type": "string",
+                        "description": "科目代码，如 english、math、politics。",
+                    },
+                },
+                "required": ["subject_code"],
+            },
+        },
+    },
+]
+
+
+def tools_for_agent(agent_type: str, subject_code: str | None) -> list[dict[str, Any]]:
+    if agent_type == "subject":
+        if not subject_code:
+            return []
+        return SUBJECT_CHAT_TOOLS
+    if agent_type == "planner":
+        return PLANNER_CHAT_TOOLS
+    return []
