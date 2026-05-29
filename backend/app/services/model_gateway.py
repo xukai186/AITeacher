@@ -106,6 +106,19 @@ class ModelGateway:
                     warnings = data.get("warnings") or []
                     if warnings:
                         text += " " + " ".join(warnings)
+                elif name == "get_master_plan":
+                    text = (
+                        "已读取总规划（含每日时间预算）。"
+                        if data.get("exists")
+                        else "尚未创建总规划，完成摸底后会自动生成。"
+                    )
+                elif name == "get_student_overview":
+                    n = len(data.get("subjects") or [])
+                    text = f"已汇总 {n} 个科目的学情概览，可针对薄弱科目安排复习。"
+                elif name == "trigger_plan_review":
+                    reviews = data.get("reviews") or []
+                    total = sum(int(r.get("created_count", 0)) for r in reviews)
+                    text = f"已为 {len(reviews)} 个科目完成计划复审，新生成 {total} 项任务。"
                 else:
                     text = f"[mock:{scene}] 工具 {name} 已完成。"
                 digest = hashlib.sha256(f"{model}:{text}".encode()).hexdigest()[:6]
@@ -117,15 +130,57 @@ class ModelGateway:
                 last_user = str(msg.get("content") or "")
                 break
 
-        if "get_subject_context" in tool_names and re.search(
-            r"学情|薄弱|报告|掌握|错题情况", last_user
+        if "get_master_plan" in tool_names and re.search(
+            r"总规划|总计划|时间预算|每日时长", last_user
         ):
             return ModelCompletion(
                 tool_calls=(
                     ToolCall(
                         id=f"call_{uuid.uuid4().hex[:8]}",
-                        name="get_subject_context",
+                        name="get_master_plan",
                         arguments="{}",
+                    ),
+                )
+            )
+
+        if "get_student_overview" in tool_names and re.search(
+            r"概览|全科|整体学情|所有科目", last_user
+        ):
+            return ModelCompletion(
+                tool_calls=(
+                    ToolCall(
+                        id=f"call_{uuid.uuid4().hex[:8]}",
+                        name="get_student_overview",
+                        arguments="{}",
+                    ),
+                )
+            )
+
+        if "trigger_plan_review" in tool_names and re.search(
+            r"生成|安排|明日|明天|复审|任务", last_user
+        ):
+            return ModelCompletion(
+                tool_calls=(
+                    ToolCall(
+                        id=f"call_{uuid.uuid4().hex[:8]}",
+                        name="trigger_plan_review",
+                        arguments="{}",
+                    ),
+                )
+            )
+
+        if "get_subject_context" in tool_names and re.search(
+            r"学情|薄弱|报告|掌握|错题情况", last_user
+        ):
+            args = "{}"
+            if "英语" in last_user or "english" in last_user.lower():
+                args = '{"subject_code":"english"}'
+            return ModelCompletion(
+                tool_calls=(
+                    ToolCall(
+                        id=f"call_{uuid.uuid4().hex[:8]}",
+                        name="get_subject_context",
+                        arguments=args,
                     ),
                 )
             )

@@ -9,6 +9,11 @@ from sqlalchemy.orm import Session
 
 from app.services.agent_context import SubjectContext, get_subject_context
 from app.services.plan_review import PlanReviewResult, PlanReviewService
+from app.services.planner_context import (
+    get_master_plan_summary,
+    get_student_overview,
+    trigger_plan_review,
+)
 
 
 def _parse_target_date(raw: str | None) -> date | None:
@@ -60,6 +65,29 @@ class ChatToolExecutor:
                 db, student_user_id=student_user_id, subject_code=str(subject_code)
             )
             return _serialize_context(ctx)
+
+        if tool_name == "get_master_plan":
+            if agent_type != "planner":
+                return {"error": "get_master_plan is only available for planner agent"}
+            return get_master_plan_summary(db, student_user_id=student_user_id)
+
+        if tool_name == "get_student_overview":
+            if agent_type != "planner":
+                return {"error": "get_student_overview is only available for planner agent"}
+            return get_student_overview(db, student_user_id=student_user_id)
+
+        if tool_name == "trigger_plan_review":
+            if agent_type != "planner":
+                return {"error": "trigger_plan_review is only available for planner agent"}
+            subject = arguments.get("subject_code")
+            target = _parse_target_date(arguments.get("target_date"))
+            results = trigger_plan_review(
+                db,
+                student_user_id=student_user_id,
+                subject_code=str(subject) if subject else None,
+                target_date=target,
+            )
+            return {"reviews": results}
 
         if tool_name == "generate_daily_tasks":
             if agent_type != "subject":

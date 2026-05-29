@@ -1,6 +1,7 @@
 export type ChatMessage = {
   role: "user" | "assistant";
   content: string;
+  toolsUsed?: string[];
 };
 
 export default function ChatMessageList({
@@ -19,7 +20,12 @@ export default function ChatMessageList({
               : "self-start bg-slate-100 text-slate-900"
           }`}
         >
-          {m.content}
+          <div>{m.content}</div>
+          {m.role === "assistant" && m.toolsUsed && m.toolsUsed.length > 0 ? (
+            <div className="mt-1 text-xs text-slate-500">
+              已调用：{m.toolsUsed.join("、")}
+            </div>
+          ) : null}
         </div>
       ))}
     </div>
