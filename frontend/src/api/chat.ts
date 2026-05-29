@@ -9,6 +9,7 @@ export type ChatPostRequest = {
 export type ChatPostResponse = {
   session_id: string;
   assistant_message: string;
+  tools_used?: string[];
 };
 
 export function postChat(body: ChatPostRequest) {

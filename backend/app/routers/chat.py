@@ -16,12 +16,16 @@ def post_chat(
     db: Session = Depends(get_db),
     student: User = Depends(require_roles(UserRole.student)),
 ) -> ChatPostResponse:
-    session_id, assistant_message = ChatService().post_message(
+    session_id, assistant_message, tools_used = ChatService().post_message(
         db,
         student_user=student,
         agent_type=payload.agent_type,
         subject_code=payload.subject_code,
         message=payload.message,
     )
-    return ChatPostResponse(session_id=session_id, assistant_message=assistant_message)
+    return ChatPostResponse(
+        session_id=session_id,
+        assistant_message=assistant_message,
+        tools_used=tools_used,
+    )
 
