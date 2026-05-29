@@ -20,6 +20,7 @@ from app.schemas.placement import (
     PlacementSubjectStatus,
 )
 from app.services.mastery import MasteryService
+from app.services.plan_review import PlanReviewService
 from app.services.planning import PlanningService
 from app.services.tasks import TaskGenerator
 from app.services.wrong_book import WrongBookService
@@ -309,6 +310,12 @@ class PlacementService:
 
         db.flush()
         WrongBookService.ingest_from_placement_submission(db, submission.id)
+        PlanReviewService().run_subject_review(
+            db,
+            student_user_id=student_user_id,
+            subject_code=paper.subject_code,
+            trigger="placement_completed",
+        )
 
         db.commit()
         return PlacementSubmitOut(

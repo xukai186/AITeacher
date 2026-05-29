@@ -18,6 +18,7 @@ from app.models import (
 )
 from app.schemas.self_test import SelfTestSubmitIn
 from app.services.grading import GradingService
+from app.services.plan_review import PlanReviewService
 from app.services.wrong_book import WrongBookService
 from app.seed_syllabus import seed_minimal_syllabus
 
@@ -213,6 +214,12 @@ class SelfTestService:
 
         db.flush()
         WrongBookService.ingest_from_self_test_submission(db, submission.id)
+        PlanReviewService().run_subject_review(
+            db,
+            student_user_id=student_user_id,
+            subject_code=paper.subject_code,
+            trigger="self_test_graded",
+        )
         db.commit()
         return grade
 
