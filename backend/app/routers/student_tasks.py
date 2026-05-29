@@ -21,7 +21,11 @@ def get_today_tasks(
     tasks = (
         db.execute(
             select(DailyTask)
-            .where(DailyTask.student_user_id == student.id, DailyTask.date == today)
+            .where(
+                DailyTask.student_user_id == student.id,
+                DailyTask.date == today,
+                DailyTask.status == "pending",
+            )
             .order_by(DailyTask.created_at)
         )
         .scalars()

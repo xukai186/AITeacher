@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, Routes, Route } from "react-router-dom";
 import Report from "../src/pages/student/Report";
@@ -17,6 +17,22 @@ function mockFetch() {
             name: "s",
             exam_year: 2027,
             subject_codes: ["english"],
+          }),
+          { status: 200 },
+        );
+      }
+      if (url.includes("/api/student/agent/apply-recommendations")) {
+        return new Response(
+          JSON.stringify({
+            target_date: "2026-05-30",
+            subject_code: "english",
+            created: [],
+            created_count: 2,
+            skipped_count: 0,
+            budget_minutes: 180,
+            scheduled_minutes: 75,
+            over_budget: false,
+            warnings: [],
           }),
           { status: 200 },
         );
@@ -101,6 +117,14 @@ describe("Report page", () => {
     await waitFor(() => expect(screen.getByText("查看错题")).toBeTruthy());
     await waitFor(() => expect(screen.getByText("近 7 天")).toBeTruthy());
     await waitFor(() => expect(screen.getByText("新增错题：3")).toBeTruthy());
+  });
+
+  it("applies recommendations as tomorrow tasks", async () => {
+    mockFetch();
+    renderPage();
+    await waitFor(() => expect(screen.getByText("生成明日任务")).toBeTruthy());
+    fireEvent.click(screen.getByText("生成明日任务"));
+    await waitFor(() => expect(screen.getByText(/已为 2026-05-30 生成 2 项任务/)).toBeTruthy());
   });
 });
 

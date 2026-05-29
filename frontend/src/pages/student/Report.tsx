@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
+import { applyRecommendationsAsTasks } from "@/api/agent";
 import { fetchStudentMe } from "@/api/me";
 import { fetchStudentReportOverview } from "@/api/report";
 
@@ -11,8 +12,10 @@ const SUBJECT_LABELS: Record<string, string> = {
 };
 
 export default function Report() {
+  const queryClient = useQueryClient();
   const me = useQuery({ queryKey: ["student", "me"], queryFn: fetchStudentMe });
   const [subject, setSubject] = useState<string>("__default__");
+  const [applyMessage, setApplyMessage] = useState<string | null>(null);
 
   const subjectOptions = useMemo(() => me.data?.subject_codes ?? [], [me.data?.subject_codes]);
   const effectiveSubject = subject === "__default__" ? subjectOptions[0] || "" : subject;
@@ -24,6 +27,21 @@ export default function Report() {
         subject_code: effectiveSubject || undefined,
       }),
     enabled: Boolean(me.data),
+  });
+
+  const applyTasks = useMutation({
+    mutationFn: () =>
+      applyRecommendationsAsTasks({
+        subject_code: effectiveSubject,
+      }),
+    onSuccess: (out) => {
+      void queryClient.invalidateQueries({ queryKey: ["student", "tasks", "today"] });
+      const warn = out.warnings.length ? ` ${out.warnings.join(" ")}` : "";
+      setApplyMessage(
+        `已为 ${out.target_date} 生成 ${out.created_count} 项任务（跳过 ${out.skipped_count} 项重复）。${warn}`,
+      );
+    },
+    onError: (err) => setApplyMessage((err as Error).message),
   });
 
   if (me.isLoading) return <p className="text-slate-500">加载中…</p>;
@@ -90,7 +108,23 @@ export default function Report() {
             </ul>
           </div>
           <div className="bg-white shadow rounded p-4 space-y-2 md:col-span-2">
-            <div className="font-medium">建议</div>
+            <div className="flex justify-between items-center gap-2">
+              <div className="font-medium">建议</div>
+              {effectiveSubject && (overview.data?.recommendations ?? []).length > 0 ? (
+                <button
+                  type="button"
+                  className="text-sm px-3 py-1 rounded bg-slate-900 text-white disabled:opacity-50"
+                  disabled={applyTasks.isPending}
+                  onClick={() => {
+                    setApplyMessage(null);
+                    applyTasks.mutate();
+                  }}
+                >
+                  {applyTasks.isPending ? "生成中…" : "生成明日任务"}
+                </button>
+              ) : null}
+            </div>
+            {applyMessage ? <p className="text-sm text-slate-600">{applyMessage}</p> : null}
             {(overview.data?.recommendations ?? []).length === 0 ? (
               <div className="text-sm text-slate-500">暂无建议。</div>
             ) : (
