@@ -38,6 +38,43 @@ PLANNER_CHAT_TOOLS: list[dict[str, Any]] = [
     {
         "type": "function",
         "function": {
+            "name": "get_student_overview",
+            "description": "读取学生各启用科目的学情概览（错题来源、薄弱点、建议条数）。",
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_master_plan",
+            "description": "读取当前总规划（周目标、每日时间预算等）。",
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "trigger_plan_review",
+            "description": "触发计划复审：为指定科目或全部启用科目生成/更新每日任务（默认明天）。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "subject_code": {
+                        "type": "string",
+                        "description": "可选；省略则处理全部启用科目。",
+                    },
+                    "target_date": {
+                        "type": "string",
+                        "description": "任务日期 ISO YYYY-MM-DD；省略则为明天。",
+                    },
+                },
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "get_subject_context",
             "description": "读取指定科目的学情摘要（需提供 subject_code）。",
             "parameters": {

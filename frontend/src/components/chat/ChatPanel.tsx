@@ -27,7 +27,12 @@ export default function ChatPanel({
       setSessionId(resp.session_id);
       setMessages((prev) => [
         ...prev,
-        { role: "assistant", content: resp.assistant_message },
+        {
+          role: "assistant",
+          content: resp.assistant_message,
+          toolsUsed:
+            resp.tools_used && resp.tools_used.length > 0 ? resp.tools_used : undefined,
+        },
       ]);
     } finally {
       setPending(false);
