@@ -28,4 +28,5 @@ class ReportOverviewOut(BaseModel):
     weak_nodes: list[ReportWeakNodeOut]
     self_test_trend: list[ReportTrendPointOut]
     recommendations: list[dict] = Field(default_factory=list)
+    last_7d: dict = Field(default_factory=dict)
 

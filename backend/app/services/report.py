@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -19,6 +20,52 @@ class ReportQuery:
 
 
 class ReportService:
+    @staticmethod
+    def _last_7d(db: Session, q: ReportQuery) -> dict:
+        cutoff = datetime.now(timezone.utc) - timedelta(days=7)
+
+        wb_stmt = select(WrongBookItem).where(
+            WrongBookItem.student_user_id == q.student_user_id,
+            WrongBookItem.created_at >= cutoff,
+        )
+        if q.subject_code:
+            wb_stmt = wb_stmt.where(WrongBookItem.subject_code == q.subject_code)
+        wrong_added = db.execute(wb_stmt).scalars().all()
+
+        wb_source_stmt = (
+            select(WrongBookItem.source_type, func.count(WrongBookItem.id))
+            .where(
+                WrongBookItem.student_user_id == q.student_user_id,
+                WrongBookItem.created_at >= cutoff,
+            )
+            .group_by(WrongBookItem.source_type)
+        )
+        if q.subject_code:
+            wb_source_stmt = wb_source_stmt.where(WrongBookItem.subject_code == q.subject_code)
+        wrong_source_counts = {k: int(v) for k, v in db.execute(wb_source_stmt).all()}
+
+        st_stmt = (
+            select(SelfTestGrade.total_score)
+            .join(SelfTestSubmission, SelfTestSubmission.id == SelfTestGrade.submission_id)
+            .join(SelfTestPaper, SelfTestPaper.id == SelfTestSubmission.paper_id)
+            .where(
+                SelfTestSubmission.student_user_id == q.student_user_id,
+                SelfTestSubmission.created_at >= cutoff,
+            )
+        )
+        if q.subject_code:
+            st_stmt = st_stmt.where(SelfTestPaper.subject_code == q.subject_code)
+        scores = [int(s) for (s,) in db.execute(st_stmt).all()]
+        self_test_count = len(scores)
+        self_test_avg_score = (sum(scores) / self_test_count) if self_test_count else None
+
+        return {
+            "wrong_added": len(wrong_added),
+            "wrong_source_counts": wrong_source_counts,
+            "self_test_count": self_test_count,
+            "self_test_avg_score": self_test_avg_score,
+        }
+
     @staticmethod
     def _recommendations(
         q: ReportQuery,
@@ -131,5 +178,6 @@ class ReportService:
             weak_nodes=weak_nodes,
             self_test_trend=trend,
             recommendations=ReportService._recommendations(q, source_counts, weak_nodes, trend),
+            last_7d=ReportService._last_7d(db, q),
         )
 
