@@ -1,4 +1,5 @@
 import { FormEvent, useState } from "react";
+import { Link } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { assignPackage, listPackages } from "@/api/packages";
 import { createStudent, listStudents, Student } from "@/api/students";
@@ -106,6 +107,7 @@ export default function StudentsList() {
                 <th className="px-4 py-2">邮箱</th>
                 <th className="px-4 py-2">考试年份</th>
                 <th className="px-4 py-2">套餐</th>
+                <th className="px-4 py-2" />
               </tr>
             </thead>
             <tbody>
@@ -131,11 +133,19 @@ export default function StudentsList() {
                       ))}
                     </select>
                   </td>
+                  <td className="px-4 py-2">
+                    <Link
+                      to={`/admin/students/${s.id}`}
+                      className="text-blue-600 hover:underline"
+                    >
+                      详情
+                    </Link>
+                  </td>
                 </tr>
               ))}
               {data.length === 0 && (
                 <tr>
-                  <td colSpan={4} className="px-4 py-6 text-center text-slate-500">
+                  <td colSpan={5} className="px-4 py-6 text-center text-slate-500">
                     暂无学员
                   </td>
                 </tr>
