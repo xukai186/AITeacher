@@ -7,7 +7,7 @@ from datetime import date
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.models import DailyTask, MasterPlan, MasterPlanVersion
+from app.models import DailyTask, MasterPlan, MasterPlanVersion, Package, StudentProfile, StudentSubject
 
 # Lower number = higher priority (kept longer when trimming).
 TASK_PRIORITY: dict[str, int] = {
@@ -26,6 +26,7 @@ class TrimBudgetResult:
     scheduled_minutes_after: int
     cancelled_count: int = 0
     cancelled_task_ids: list[uuid.UUID] = field(default_factory=list)
+    cancelled_by_subject: dict[str, int] = field(default_factory=dict)
 
 
 def budget_minutes_for_date(db: Session, student_user_id: uuid.UUID, day: date) -> int | None:
@@ -55,8 +56,49 @@ def scheduled_minutes_for_date(db: Session, student_user_id: uuid.UUID, day: dat
     return int(total)
 
 
+def subject_weights_for_student(db: Session, student_user_id: uuid.UUID) -> dict[str, int]:
+    """Higher weight = more protected when trimming across subjects (package order)."""
+    profile = db.execute(
+        select(StudentProfile).where(StudentProfile.user_id == student_user_id)
+    ).scalar_one_or_none()
+
+    codes: list[str] = []
+    if profile is not None and profile.package_id is not None:
+        pkg = db.get(Package, profile.package_id)
+        if pkg is not None and pkg.subject_codes:
+            codes = list(pkg.subject_codes)
+
+    if not codes:
+        codes = list(
+            db.execute(
+                select(StudentSubject.subject_code).where(
+                    StudentSubject.student_user_id == student_user_id,
+                    StudentSubject.enabled.is_(True),
+                )
+            )
+            .scalars()
+            .all()
+        )
+
+    if not codes:
+        return {}
+
+    n = len(codes)
+    return {code: n - idx for idx, code in enumerate(codes)}
+
+
+def _cancel_sort_key(task: DailyTask, weights: dict[str, int]) -> tuple:
+    # Cancel low subject weight first, then low task-type priority (study before review_wrong).
+    return (
+        weights.get(task.subject_code, 0),
+        -TASK_PRIORITY.get(task.type, 99),
+        -task.est_minutes,
+        task.created_at,
+    )
+
+
 class MasterPlannerService:
-    """总规划 Agent（规则版）：按当日预算削减低优先级 pending 任务。"""
+    """总规划 Agent（规则版）：跨科当日预算内按科目权重 + 任务优先级削减。"""
 
     def trim_tasks_by_budget(
         self,
@@ -76,6 +118,7 @@ class MasterPlannerService:
         if budget is None or before <= budget:
             return result
 
+        weights = subject_weights_for_student(db, student_user_id)
         tasks = (
             db.execute(
                 select(DailyTask).where(
@@ -87,16 +130,7 @@ class MasterPlannerService:
             .scalars()
             .all()
         )
-        # Cancel lowest-priority tasks first; tie-break by larger est_minutes.
-        tasks_sorted = sorted(
-            tasks,
-            key=lambda t: (
-                TASK_PRIORITY.get(t.type, 99),
-                -t.est_minutes,
-                t.created_at,
-            ),
-            reverse=True,
-        )
+        tasks_sorted = sorted(tasks, key=lambda t: _cancel_sort_key(t, weights))
 
         scheduled = before
         for task in tasks_sorted:
@@ -106,6 +140,9 @@ class MasterPlannerService:
             scheduled -= task.est_minutes
             result.cancelled_count += 1
             result.cancelled_task_ids.append(task.id)
+            result.cancelled_by_subject[task.subject_code] = (
+                result.cancelled_by_subject.get(task.subject_code, 0) + 1
+            )
 
         db.flush()
         result.scheduled_minutes_after = scheduled_minutes_for_date(db, student_user_id, target_date)

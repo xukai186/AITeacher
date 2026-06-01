@@ -8,6 +8,7 @@ from sqlalchemy import and_, or_, select, update
 from sqlalchemy.orm import Session
 
 from app.models import PlanReviewJob
+from app.services.master_planner import MasterPlannerService
 from app.services.plan_review import PlanReviewResult, PlanReviewService
 
 
@@ -160,6 +161,9 @@ class PlanReviewJobRunner:
             return 0
 
         ran = 0
+        trim_keys: set[tuple[uuid.UUID, date]] = set()
+        planner = MasterPlannerService()
+
         for job in jobs:
             # lock
             db.execute(
@@ -196,6 +200,7 @@ class PlanReviewJobRunner:
                         },
                     )
                 )
+                trim_keys.add((job.student_user_id, job.target_date))
                 ran += 1
             except Exception as exc:  # noqa: BLE001
                 next_attempt = job.attempts + 1
@@ -212,6 +217,40 @@ class PlanReviewJobRunner:
                     )
                 )
                 ran += 1
+
+        for student_user_id, target_date in trim_keys:
+            trim = planner.trim_tasks_by_budget(
+                db,
+                student_user_id=student_user_id,
+                target_date=target_date,
+            )
+            if trim.cancelled_count == 0:
+                continue
+            warn = (
+                f"跨科协调：已取消 {trim.cancelled_count} 项低优先级任务，"
+                f"当日由 {trim.scheduled_minutes_before} 分钟调整为 {trim.scheduled_minutes_after} 分钟。"
+            )
+            day_jobs = db.execute(
+                select(PlanReviewJob).where(
+                    PlanReviewJob.student_user_id == student_user_id,
+                    PlanReviewJob.target_date == target_date,
+                    PlanReviewJob.status == "succeeded",
+                )
+            ).scalars().all()
+            for j in day_jobs:
+                payload = dict(j.result_json or {})
+                warnings = list(payload.get("warnings") or [])
+                if warn not in warnings:
+                    warnings.append(warn)
+                payload["warnings"] = warnings
+                payload["cross_subject_cancelled"] = trim.cancelled_count
+                payload["cancelled_by_subject"] = trim.cancelled_by_subject
+                payload["scheduled_minutes"] = trim.scheduled_minutes_after
+                db.execute(
+                    update(PlanReviewJob)
+                    .where(PlanReviewJob.id == j.id)
+                    .values(result_json=payload)
+                )
 
         db.flush()
         return ran
