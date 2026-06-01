@@ -14,6 +14,7 @@ import SelfTestPaper from "@/pages/student/SelfTestPaper";
 import SelfTestResult from "@/pages/student/SelfTestResult";
 import WrongBook from "@/pages/student/WrongBook";
 import Report from "@/pages/student/Report";
+import MasterPlanPage from "@/pages/student/MasterPlan";
 
 export default function App() {
   return (
@@ -59,6 +60,7 @@ export default function App() {
         <Route path="/student/self-tests/result/:submissionId" element={<SelfTestResult />} />
         <Route path="/student/wrong-book" element={<WrongBook />} />
         <Route path="/student/report" element={<Report />} />
+        <Route path="/student/master-plan" element={<MasterPlanPage />} />
       </Route>
 
       <Route path="*" element={<Navigate to="/login" replace />} />

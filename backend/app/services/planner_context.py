@@ -23,6 +23,10 @@ def get_master_plan_summary(db: Session, *, student_user_id: uuid.UUID) -> dict[
     if plan.current_version_id is not None:
         version = db.get(MasterPlanVersion, plan.current_version_id)
 
+    pending: MasterPlanVersion | None = None
+    if plan.pending_version_id is not None:
+        pending = db.get(MasterPlanVersion, plan.pending_version_id)
+
     return {
         "exists": True,
         "plan_id": str(plan.id),
@@ -30,6 +34,8 @@ def get_master_plan_summary(db: Session, *, student_user_id: uuid.UUID) -> dict[
         "version": version.version if version else None,
         "weekly_goals": version.weekly_goals_json if version else None,
         "daily_time_budget": version.daily_time_budget_json if version else None,
+        "pending_version": pending.version if pending else None,
+        "requires_confirmation": plan.pending_version_id is not None,
     }
 
 
