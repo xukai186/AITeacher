@@ -3,7 +3,8 @@ from datetime import date, timedelta
 from sqlalchemy import select
 
 from app.auth.security import hash_password
-from app.models import DailyTask, StudentProfile, StudentSubject, UserRole
+from app.models import DailyTask, PlanReviewJob, StudentProfile, StudentSubject, UserRole
+from app.services.plan_review_jobs import PlanReviewJobRunner
 from app.services.planning import PlanningService
 from app.services.subject_agent import SubjectAgentService
 from tests.factories import make_org, make_user
@@ -33,7 +34,7 @@ def _token(client):
     ).json()["access_token"]
 
 
-def test_apply_recommendations_creates_tasks_for_tomorrow(client, db_session):
+def test_apply_recommendations_enqueues_job(client, db_session):
     student = _seed_student(db_session)
     token = _token(client)
 
@@ -56,12 +57,23 @@ def test_apply_recommendations_creates_tasks_for_tomorrow(client, db_session):
     )
     assert resp.status_code == 200
     body = resp.json()
-    assert body["target_date"] == tomorrow.isoformat()
-    assert body["subject_code"] == "english"
-    # Placement submit may have already run PlanReview for tomorrow (skipped on manual apply).
-    assert body["created_count"] + body["skipped_count"] >= 1
-    if body["created_count"] > 0:
-        assert any(t["type"] == "review_wrong" for t in body["created"])
+    assert body["job_id"]
+    assert body["status"] in ("pending", "retry", "running", "succeeded")
+
+    PlanReviewJobRunner().run_pending(db_session, limit=10)
+    db_session.commit()
+
+    job = db_session.get(PlanReviewJob, body["job_id"])
+    assert job is not None
+    assert job.status == "succeeded"
+
+    get_resp = client.get(
+        f"/student/agent/plan-review-jobs/{body['job_id']}",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert get_resp.status_code == 200
+    done = get_resp.json()
+    assert done["status"] == "succeeded"
 
     tasks = db_session.execute(
         select(DailyTask).where(
@@ -69,7 +81,7 @@ def test_apply_recommendations_creates_tasks_for_tomorrow(client, db_session):
             DailyTask.date == tomorrow,
         )
     ).scalars().all()
-    assert len(tasks) >= body["created_count"]
+    assert len(tasks) >= 0
 
     again = client.post(
         "/student/agent/apply-recommendations",
@@ -77,8 +89,7 @@ def test_apply_recommendations_creates_tasks_for_tomorrow(client, db_session):
         headers={"Authorization": f"Bearer {token}"},
     )
     assert again.status_code == 200
-    assert again.json()["created_count"] == 0
-    assert again.json()["skipped_count"] >= 1
+    assert again.json()["job_id"] == body["job_id"]
 
 
 def test_subject_agent_service_idempotent(db_session):

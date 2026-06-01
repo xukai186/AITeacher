@@ -3,8 +3,9 @@ from datetime import date, timedelta
 from sqlalchemy import select
 
 from app.auth.security import hash_password
-from app.models import DailyTask, StudentProfile, StudentSubject, UserRole
+from app.models import PlanReviewJob, StudentProfile, StudentSubject, UserRole
 from app.services.daily_task_generation import DailyTaskGenerationService
+from app.services.plan_review_jobs import PlanReviewJobRunner
 from app.services.planning import PlanningService
 from tests.factories import make_org, make_user
 
@@ -30,10 +31,10 @@ def test_daily_generation_runs_plan_review_for_enabled_subjects(db_session):
     assert result.subjects_failed == 0
     assert result.target_date == tomorrow
 
-    tasks = db_session.execute(
-        select(DailyTask).where(
-            DailyTask.student_user_id == student.id,
-            DailyTask.date == tomorrow,
-        )
-    ).scalars().all()
-    assert len(tasks) >= 0
+    jobs = db_session.execute(select(PlanReviewJob)).scalars().all()
+    assert len(jobs) >= 1
+
+    PlanReviewJobRunner().run_pending(db_session, limit=10)
+    db_session.commit()
+
+    assert any(j.status == "succeeded" for j in jobs)

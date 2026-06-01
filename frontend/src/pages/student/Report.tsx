@@ -1,7 +1,11 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
-import { applyRecommendationsAsTasks } from "@/api/agent";
+import {
+  enqueueApplyRecommendations,
+  fetchPlanReviewJob,
+  pollPlanReviewJob,
+} from "@/api/agent";
 import { fetchStudentMe } from "@/api/me";
 import { fetchStudentReportOverview } from "@/api/report";
 
@@ -30,15 +34,27 @@ export default function Report() {
   });
 
   const applyTasks = useMutation({
-    mutationFn: () =>
-      applyRecommendationsAsTasks({
+    mutationFn: async () => {
+      const enqueued = await enqueueApplyRecommendations({
         subject_code: effectiveSubject,
-      }),
-    onSuccess: (out) => {
+      });
+      if (enqueued.status === "succeeded") {
+        const done = await fetchPlanReviewJob(enqueued.job_id);
+        return done;
+      }
+      return pollPlanReviewJob(enqueued.job_id, { intervalMs: 400, timeoutMs: 30000 });
+    },
+    onSuccess: (job) => {
       void queryClient.invalidateQueries({ queryKey: ["student", "tasks", "today"] });
-      const warn = out.warnings.length ? ` ${out.warnings.join(" ")}` : "";
+      if (job.status === "failed") {
+        setApplyMessage(job.last_error || "任务生成失败");
+        return;
+      }
+      const created = job.created_count ?? 0;
+      const skipped = job.skipped_count ?? 0;
+      const warn = job.warnings.length ? ` ${job.warnings.join(" ")}` : "";
       setApplyMessage(
-        `已为 ${out.target_date} 生成 ${out.created_count} 项任务（跳过 ${out.skipped_count} 项重复）。${warn}`,
+        `已为 ${job.target_date} 生成 ${created} 项任务（跳过 ${skipped} 项重复）。${warn}`,
       );
     },
     onError: (err) => setApplyMessage((err as Error).message),

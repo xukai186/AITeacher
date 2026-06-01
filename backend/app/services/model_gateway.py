@@ -117,8 +117,7 @@ class ModelGateway:
                     text = f"已汇总 {n} 个科目的学情概览，可针对薄弱科目安排复习。"
                 elif name == "trigger_plan_review":
                     reviews = data.get("reviews") or []
-                    total = sum(int(r.get("created_count", 0)) for r in reviews)
-                    text = f"已为 {len(reviews)} 个科目完成计划复审，新生成 {total} 项任务。"
+                    text = f"已提交 {len(reviews)} 个科目的计划复审任务，后台 worker 将生成明日任务。"
                 else:
                     text = f"[mock:{scene}] 工具 {name} 已完成。"
                 digest = hashlib.sha256(f"{model}:{text}".encode()).hexdigest()[:6]
