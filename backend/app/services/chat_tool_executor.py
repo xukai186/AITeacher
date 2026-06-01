@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.services.agent_context import SubjectContext, get_subject_context
 from app.services.plan_review import PlanReviewResult, PlanReviewService
+from app.services.self_test_eligibility import SelfTestEligibilityService
 from app.services.planner_context import (
     get_master_plan_summary,
     get_student_overview,
@@ -104,6 +105,35 @@ class ChatToolExecutor:
                 target_date=target,
             )
             return _serialize_plan_review(review)
+
+        if tool_name == "generate_paper":
+            if agent_type != "subject":
+                return {"error": "generate_paper is only available for subject agent"}
+            subject_code = default_subject_code
+            if not subject_code:
+                return {"error": "subject_code is required"}
+            eligibility = SelfTestEligibilityService().check(
+                db, student_user_id=student_user_id, subject_code=subject_code
+            )
+            if not eligibility.allowed:
+                return {"ok": False, "reasons": eligibility.reasons}
+            from app.services.self_test import SelfTestService
+            from sqlalchemy import func, select
+            from app.models import SelfTestQuestion
+
+            paper = SelfTestService.generate(db, student_user_id, subject_code)
+            q_count = db.execute(
+                select(func.count(SelfTestQuestion.id)).where(
+                    SelfTestQuestion.paper_id == paper.id
+                )
+            ).scalar_one()
+            return {
+                "ok": True,
+                "paper_id": str(paper.id),
+                "subject_code": paper.subject_code,
+                "status": paper.status,
+                "question_count": int(q_count),
+            }
 
         return {"error": f"unknown tool: {tool_name}"}
 
