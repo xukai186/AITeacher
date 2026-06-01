@@ -7,7 +7,7 @@ from datetime import date, timedelta
 from sqlalchemy.orm import Session
 
 from app.services.agent_tools import default_tool_registry
-from app.services.master_planner import MasterPlannerService, TrimBudgetResult
+from app.services.master_planner import TrimBudgetResult, scheduled_minutes_for_date
 from app.services.subject_agent import ApplyRecommendationsResult
 
 
@@ -43,18 +43,16 @@ class PlanReviewService:
             subject_code=subject_code,
             target_date=day,
         )
-        trim = MasterPlannerService().trim_tasks_by_budget(
-            db,
-            student_user_id=student_user_id,
+        budget = apply.budget_minutes
+        scheduled_now = scheduled_minutes_for_date(db, student_user_id, day)
+        trim = TrimBudgetResult(
             target_date=day,
+            budget_minutes=budget,
+            scheduled_minutes_before=scheduled_now,
+            scheduled_minutes_after=scheduled_now,
         )
 
         warnings = list(apply.warnings)
-        if trim.cancelled_count > 0:
-            warnings.append(
-                f"总规划已取消 {trim.cancelled_count} 项低优先级任务，"
-                f"当日由 {trim.scheduled_minutes_before} 分钟调整为 {trim.scheduled_minutes_after} 分钟。"
-            )
 
         return PlanReviewResult(
             trigger=trigger,
