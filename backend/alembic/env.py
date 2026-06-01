@@ -18,6 +18,7 @@ import app.models.syllabus  # noqa: F401
 import app.models.placement  # noqa: F401
 import app.models.mastery  # noqa: F401
 import app.models.plan  # noqa: F401
+import app.models.plan_review_job  # noqa: F401
 import app.models.task  # noqa: F401
 import app.models.placement_submission  # noqa: F401
 import app.models.self_test  # noqa: F401

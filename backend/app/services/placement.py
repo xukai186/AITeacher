@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import uuid
-from datetime import date
+from datetime import date, timedelta
 
 from fastapi import HTTPException, status
 from sqlalchemy import func, select
@@ -20,7 +20,7 @@ from app.schemas.placement import (
     PlacementSubjectStatus,
 )
 from app.services.mastery import MasteryService
-from app.services.plan_review import PlanReviewService
+from app.services.plan_review_jobs import PlanReviewJobRunner, PlanReviewJobService
 from app.services.planning import PlanningService
 from app.services.tasks import TaskGenerator
 from app.services.wrong_book import WrongBookService
@@ -310,12 +310,14 @@ class PlacementService:
 
         db.flush()
         WrongBookService.ingest_from_placement_submission(db, submission.id)
-        PlanReviewService().run_subject_review(
+        PlanReviewJobService().enqueue(
             db,
             student_user_id=student_user_id,
             subject_code=paper.subject_code,
+            target_date=date.today() + timedelta(days=1),
             trigger="placement_completed",
         )
+        PlanReviewJobRunner().run_pending(db, limit=5)
 
         db.commit()
         return PlacementSubmitOut(
