@@ -2,7 +2,7 @@ import os
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.config import get_settings
@@ -21,12 +21,27 @@ TestSession = sessionmaker(
 )
 
 
+def _sync_test_schema(connection) -> None:
+    """create_all does not add columns to existing tables; patch drift for tests."""
+    Base.metadata.create_all(bind=connection)
+    insp = inspect(connection)
+    if "master_plans" in insp.get_table_names():
+        cols = {c["name"] for c in insp.get_columns("master_plans")}
+        if "pending_version_id" not in cols:
+            connection.execute(
+                text(
+                    "ALTER TABLE master_plans "
+                    "ADD COLUMN pending_version_id UUID NULL "
+                    "REFERENCES master_plan_versions(id) ON DELETE SET NULL"
+                )
+            )
+
+
 @pytest.fixture
 def db_session() -> Session:
     connection = test_engine.connect()
     transaction = connection.begin()
-    # Ensure newly-added tables exist in test DB.
-    Base.metadata.create_all(bind=connection)
+    _sync_test_schema(connection)
     session = TestSession(bind=connection)
     try:
         yield session

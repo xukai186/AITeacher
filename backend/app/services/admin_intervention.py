@@ -45,6 +45,7 @@ class AdminInterventionService:
         db.add(version)
         db.flush()
         master.current_version_id = version.id
+        master.pending_version_id = None
 
         record_audit(
             db,

@@ -8,7 +8,8 @@ from sqlalchemy import and_, or_, select, update
 from sqlalchemy.orm import Session
 
 from app.models import PlanReviewJob
-from app.services.master_planner import MasterPlannerService
+from app.services.master_plan_activation import MasterPlanActivationService
+from app.services.master_planner import MasterPlannerService, budget_minutes_for_date
 from app.services.plan_review import PlanReviewResult, PlanReviewService
 
 
@@ -226,6 +227,26 @@ class PlanReviewJobRunner:
             )
             if trim.cancelled_count == 0:
                 continue
+
+            activation = MasterPlanActivationService()
+            current_budget = budget_minutes_for_date(db, student_user_id, target_date)
+            if current_budget is not None and trim.scheduled_minutes_after != current_budget:
+                proposed = activation.propose_daily_budget(
+                    db,
+                    student_user_id=student_user_id,
+                    target_date=target_date,
+                    new_minutes_for_day=trim.scheduled_minutes_after,
+                    source="ai",
+                )
+                if proposed is not None and proposed.pending:
+                    warn_pending = (
+                        "总规划每日时长调整超过 15%，请在「总计划」页确认后生效。"
+                    )
+                else:
+                    warn_pending = None
+            else:
+                warn_pending = None
+
             warn = (
                 f"跨科协调：已取消 {trim.cancelled_count} 项低优先级任务，"
                 f"当日由 {trim.scheduled_minutes_before} 分钟调整为 {trim.scheduled_minutes_after} 分钟。"
@@ -242,6 +263,8 @@ class PlanReviewJobRunner:
                 warnings = list(payload.get("warnings") or [])
                 if warn not in warnings:
                     warnings.append(warn)
+                if warn_pending and warn_pending not in warnings:
+                    warnings.append(warn_pending)
                 payload["warnings"] = warnings
                 payload["cross_subject_cancelled"] = trim.cancelled_count
                 payload["cancelled_by_subject"] = trim.cancelled_by_subject
