@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import uuid
 
+from datetime import date, timedelta
 from fastapi import HTTPException, status
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -19,6 +20,7 @@ from app.models import (
 from app.schemas.self_test import SelfTestSubmitIn
 from app.services.grading import GradingService
 from app.services.plan_review import PlanReviewService
+from app.services.plan_review_jobs import PlanReviewJobRunner, PlanReviewJobService
 from app.services.wrong_book import WrongBookService
 from app.seed_syllabus import seed_minimal_syllabus
 
@@ -214,12 +216,16 @@ class SelfTestService:
 
         db.flush()
         WrongBookService.ingest_from_self_test_submission(db, submission.id)
-        PlanReviewService().run_subject_review(
+        svc = PlanReviewJobService()
+        svc.enqueue(
             db,
             student_user_id=student_user_id,
             subject_code=paper.subject_code,
+            target_date=date.today() + timedelta(days=1),
             trigger="self_test_graded",
         )
+        # Inline runner keeps current behavior while enabling async deployment.
+        PlanReviewJobRunner().run_pending(db, limit=5)
         db.commit()
         return grade
 

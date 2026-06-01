@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.models import StudentSubject
 from app.services.plan_review import PlanReviewService
+from app.services.plan_review_jobs import PlanReviewJobRunner, PlanReviewJobService
 
 
 @dataclass
@@ -50,27 +51,27 @@ class DailyTaskGenerationService:
         ).all()
 
         result = DailyGenerationResult(target_date=day)
-        review_svc = PlanReviewService()
+        enqueue = PlanReviewJobService()
+        runner = PlanReviewJobRunner()
 
         for student_user_id, subject_code in pairs:
             try:
-                review = review_svc.run_subject_review(
+                enqueue.enqueue(
                     db,
                     student_user_id=student_user_id,
                     subject_code=subject_code,
-                    trigger="daily_schedule",
                     target_date=day,
+                    trigger="daily_schedule",
                 )
+                runner.run_pending(db, limit=5)
                 detail = DailyGenerationSubjectResult(
                     student_user_id=student_user_id,
                     subject_code=subject_code,
-                    created_count=review.apply.created_count,
-                    skipped_count=review.apply.skipped_count,
+                    created_count=0,
+                    skipped_count=0,
                 )
                 result.details.append(detail)
                 result.subjects_processed += 1
-                result.total_created += review.apply.created_count
-                result.total_skipped += review.apply.skipped_count
             except Exception as exc:  # noqa: BLE001 — batch job records per-row errors
                 result.subjects_failed += 1
                 result.details.append(
