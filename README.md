@@ -7,6 +7,7 @@ One-on-one AI tutors for graduate-exam students. See `docs/superpowers/specs/202
 - `backend/` — FastAPI service
 - `frontend/` — React workspace UI
 - `docs/superpowers/` — specs and plans
+- `docs/deployment/` — production ops (e.g. [worker](docs/deployment/worker.md))
 
 ## Local dev (P1)
 
