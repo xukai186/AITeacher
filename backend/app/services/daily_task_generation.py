@@ -8,6 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models import StudentSubject
+from app.services.completion_rate_review import CompletionRateReviewService
 from app.services.plan_review_jobs import PlanReviewJobService
 
 
@@ -81,5 +82,8 @@ class DailyTaskGenerationService:
                     )
                 )
 
+        CompletionRateReviewService().run_for_all_enabled(
+            db, as_of=today, target_date=day
+        )
         db.commit()
         return result

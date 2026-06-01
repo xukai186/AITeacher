@@ -5,9 +5,12 @@ from dataclasses import dataclass
 from datetime import date
 from typing import Any, Callable
 
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.models import SelfTestQuestion
 from app.services.agent_context import SubjectContext, get_subject_context
+from app.services.self_test_eligibility import SelfTestEligibilityService
 from app.services.subject_agent import ApplyRecommendationsResult, SubjectAgentService
 
 ToolHandler = Callable[..., Any]
@@ -34,6 +37,11 @@ class AgentToolRegistry:
                 name="generate_daily_tasks",
                 description="根据学情建议为指定日期生成每日任务（幂等）",
                 handler=self._generate_daily_tasks,
+            ),
+            "generate_paper": AgentTool(
+                name="generate_paper",
+                description="在规则允许时为本科目生成一份自测卷",
+                handler=self._generate_paper,
             ),
         }
 
@@ -69,6 +77,33 @@ class AgentToolRegistry:
             subject_code=subject_code,
             target_date=target_date,
         )
+
+    @staticmethod
+    def _generate_paper(
+        db: Session,
+        *,
+        student_user_id: uuid.UUID,
+        subject_code: str,
+    ) -> dict:
+        eligibility = SelfTestEligibilityService().check(
+            db, student_user_id=student_user_id, subject_code=subject_code
+        )
+        if not eligibility.allowed:
+            return {"ok": False, "reasons": eligibility.reasons}
+
+        from app.services.self_test import SelfTestService
+
+        paper = SelfTestService.generate(db, student_user_id, subject_code)
+        q_count = db.execute(
+            select(func.count(SelfTestQuestion.id)).where(SelfTestQuestion.paper_id == paper.id)
+        ).scalar_one()
+        return {
+            "ok": True,
+            "paper_id": str(paper.id),
+            "subject_code": paper.subject_code,
+            "status": paper.status,
+            "question_count": int(q_count),
+        }
 
 
 default_tool_registry = AgentToolRegistry()

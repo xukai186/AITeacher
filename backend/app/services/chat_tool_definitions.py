@@ -15,6 +15,16 @@ SUBJECT_CHAT_TOOLS: list[dict[str, Any]] = [
     {
         "type": "function",
         "function": {
+            "name": "generate_paper",
+            "description": (
+                "在规则允许时（间隔、周次数、无进行中卷等）为当前科目生成一份自测卷。"
+            ),
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "generate_daily_tasks",
             "description": (
                 "根据学情建议为学生生成指定日期的每日学习任务（幂等）。"

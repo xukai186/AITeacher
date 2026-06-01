@@ -19,8 +19,11 @@ from app.models import (
 )
 from app.schemas.self_test import SelfTestSubmitIn
 from app.services.grading import GradingService
+from app.services.mastery import MasteryService
 from app.services.plan_review_jobs import PlanReviewJobService
+from app.services.self_test_eligibility import SelfTestEligibilityService
 from app.services.wrong_book import WrongBookService
+from app.services.wrong_book_followup import WrongBookFollowUpService
 from app.seed_syllabus import seed_minimal_syllabus
 
 QUESTIONS_PER_PAPER = 10
@@ -59,6 +62,15 @@ class SelfTestService:
     @classmethod
     def generate(cls, db: Session, student_user_id: uuid.UUID, subject_code: str) -> SelfTestPaper:
         cls._ensure_syllabus(db)
+
+        eligibility = SelfTestEligibilityService().check(
+            db, student_user_id=student_user_id, subject_code=subject_code
+        )
+        if not eligibility.allowed:
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST,
+                detail={"code": "self_test_not_eligible", "reasons": eligibility.reasons},
+            )
 
         enabled = db.execute(
             select(StudentSubject.id).where(
@@ -215,6 +227,13 @@ class SelfTestService:
 
         db.flush()
         WrongBookService.ingest_from_self_test_submission(db, submission.id)
+        MasteryService.update_from_self_test_submission(db, submission.id)
+        WrongBookFollowUpService().schedule_after_self_test(
+            db,
+            student_user_id=student_user_id,
+            subject_code=paper.subject_code,
+            submission_id=submission.id,
+        )
         PlanReviewJobService().enqueue(
             db,
             student_user_id=student_user_id,
