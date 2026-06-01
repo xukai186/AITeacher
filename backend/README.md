@@ -29,6 +29,18 @@ Seed creates:
 uvicorn app.main:app --reload --port 8000
 ```
 
+## Background workers (production)
+
+Plan review jobs are enqueued by the API and processed asynchronously. See [docs/deployment/worker.md](../docs/deployment/worker.md) for cron/systemd setup.
+
+```bash
+# process queued jobs once (also used in cron every minute)
+python -m app.jobs.run_plan_review_jobs --once
+
+# enqueue next-day jobs (typically 00:05 daily)
+python -m app.jobs.daily_task_generation
+```
+
 ## Test
 
 ```bash

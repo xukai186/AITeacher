@@ -10,8 +10,10 @@
 
 ## 部署
 
+生产环境需单独跑 Worker，详见 [docs/deployment/worker.md](../../deployment/worker.md)。
+
 ```bash
-# API + worker 分离
+# API + worker 分离（cron 每分钟）
 * * * * * cd backend && .venv/bin/python -m app.jobs.run_plan_review_jobs --once
 ```
 
