@@ -60,17 +60,25 @@ class SelfTestService:
         return CHOICE_KEYS[int(digest[:8], 16) % len(CHOICE_KEYS)]
 
     @classmethod
-    def generate(cls, db: Session, student_user_id: uuid.UUID, subject_code: str) -> SelfTestPaper:
+    def generate(
+        cls,
+        db: Session,
+        student_user_id: uuid.UUID,
+        subject_code: str,
+        *,
+        skip_eligibility: bool = False,
+    ) -> SelfTestPaper:
         cls._ensure_syllabus(db)
 
-        eligibility = SelfTestEligibilityService().check(
-            db, student_user_id=student_user_id, subject_code=subject_code
-        )
-        if not eligibility.allowed:
-            raise HTTPException(
-                status.HTTP_400_BAD_REQUEST,
-                detail={"code": "self_test_not_eligible", "reasons": eligibility.reasons},
+        if not skip_eligibility:
+            eligibility = SelfTestEligibilityService().check(
+                db, student_user_id=student_user_id, subject_code=subject_code
             )
+            if not eligibility.allowed:
+                raise HTTPException(
+                    status.HTTP_400_BAD_REQUEST,
+                    detail={"code": "self_test_not_eligible", "reasons": eligibility.reasons},
+                )
 
         enabled = db.execute(
             select(StudentSubject.id).where(

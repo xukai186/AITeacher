@@ -1,3 +1,4 @@
+import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { listMyStudents, Student } from "@/api/students";
 
@@ -19,6 +20,7 @@ export default function MyStudents() {
               <th className="px-4 py-2">姓名</th>
               <th className="px-4 py-2">邮箱</th>
               <th className="px-4 py-2">考试年份</th>
+              <th className="px-4 py-2" />
             </tr>
           </thead>
           <tbody>
@@ -27,11 +29,19 @@ export default function MyStudents() {
                 <td className="px-4 py-2">{s.name}</td>
                 <td className="px-4 py-2">{s.email}</td>
                 <td className="px-4 py-2">{s.exam_year}</td>
+                <td className="px-4 py-2">
+                  <Link
+                    to={`/staff/students/${s.id}`}
+                    className="text-blue-600 hover:underline"
+                  >
+                    详情
+                  </Link>
+                </td>
               </tr>
             ))}
             {data.length === 0 && (
               <tr>
-                <td colSpan={3} className="px-4 py-6 text-center text-slate-500">
+                <td colSpan={4} className="px-4 py-6 text-center text-slate-500">
                   暂无分配学员
                 </td>
               </tr>

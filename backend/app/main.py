@@ -9,6 +9,7 @@ from app.routers import (
     auth as auth_router,
     chat as chat_router,
     me as me_router,
+    org_students,
     staff_students,
     student_placement,
     student_profile,
@@ -35,6 +36,7 @@ app.include_router(admin_staff.router)
 app.include_router(admin_packages.router)
 app.include_router(admin_model_policy.router)
 app.include_router(staff_students.router)
+app.include_router(org_students.router)
 app.include_router(student_profile.router)
 app.include_router(student_placement.router)
 app.include_router(student_tasks.router)

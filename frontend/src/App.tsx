@@ -6,6 +6,7 @@ import StudentsList from "@/pages/admin/StudentsList";
 import StaffList from "@/pages/admin/StaffList";
 import PackagesList from "@/pages/admin/PackagesList";
 import MyStudents from "@/pages/staff/MyStudents";
+import StudentDetail from "@/pages/org/StudentDetail";
 import Workspace from "@/pages/student/Workspace";
 import Placement from "@/pages/student/Placement";
 import SelfTests from "@/pages/student/SelfTests";
@@ -28,6 +29,7 @@ export default function App() {
         }
       >
         <Route path="/admin/students" element={<StudentsList />} />
+        <Route path="/admin/students/:studentId" element={<StudentDetail />} />
         <Route path="/admin/staff" element={<StaffList />} />
         <Route path="/admin/packages" element={<PackagesList />} />
       </Route>
@@ -40,6 +42,7 @@ export default function App() {
         }
       >
         <Route path="/staff/students" element={<MyStudents />} />
+        <Route path="/staff/students/:studentId" element={<StudentDetail />} />
       </Route>
 
       <Route
