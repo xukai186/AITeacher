@@ -8,8 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models import StudentSubject
-from app.services.plan_review import PlanReviewService
-from app.services.plan_review_jobs import PlanReviewJobRunner, PlanReviewJobService
+from app.services.plan_review_jobs import PlanReviewJobService
 
 
 @dataclass
@@ -51,19 +50,17 @@ class DailyTaskGenerationService:
         ).all()
 
         result = DailyGenerationResult(target_date=day)
-        enqueue = PlanReviewJobService()
-        runner = PlanReviewJobRunner()
+        enqueue_svc = PlanReviewJobService()
 
         for student_user_id, subject_code in pairs:
             try:
-                enqueue.enqueue(
+                enqueue_svc.enqueue(
                     db,
                     student_user_id=student_user_id,
                     subject_code=subject_code,
                     target_date=day,
                     trigger="daily_schedule",
                 )
-                runner.run_pending(db, limit=5)
                 detail = DailyGenerationSubjectResult(
                     student_user_id=student_user_id,
                     subject_code=subject_code,

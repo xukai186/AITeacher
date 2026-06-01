@@ -7,6 +7,7 @@ from app.models import DailyTask, MasterPlan, MasterPlanVersion, StudentProfile,
 from app.services.master_planner import MasterPlannerService
 from app.services.planning import PlanningService
 from app.services.plan_review import PlanReviewService
+from app.services.plan_review_jobs import PlanReviewJobRunner
 from app.services.tasks import TaskGenerator
 from tests.factories import make_org, make_user
 
@@ -71,6 +72,9 @@ def test_self_test_submit_triggers_plan_review_tasks(client, db_session):
         ).status_code
         == 200
     )
+
+    PlanReviewJobRunner().run_pending(db_session, limit=20)
+    db_session.commit()
 
     tomorrow = date.today() + timedelta(days=1)
     tasks = db_session.execute(

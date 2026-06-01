@@ -24,9 +24,27 @@ function mockFetch() {
       if (url.includes("/api/student/agent/apply-recommendations")) {
         return new Response(
           JSON.stringify({
-            target_date: "2026-05-30",
+            job_id: "job-1",
+            created: true,
+            status: "pending",
             subject_code: "english",
-            created: [],
+            target_date: "2026-05-30",
+            trigger: "manual_apply",
+          }),
+          { status: 200 },
+        );
+      }
+      if (url.includes("/api/student/agent/plan-review-jobs/job-1")) {
+        return new Response(
+          JSON.stringify({
+            id: "job-1",
+            status: "succeeded",
+            subject_code: "english",
+            target_date: "2026-05-30",
+            trigger: "manual_apply",
+            attempts: 1,
+            last_error: null,
+            result_json: {},
             created_count: 2,
             skipped_count: 0,
             budget_minutes: 180,
@@ -127,4 +145,3 @@ describe("Report page", () => {
     await waitFor(() => expect(screen.getByText(/已为 2026-05-30 生成 2 项任务/)).toBeTruthy());
   });
 });
-

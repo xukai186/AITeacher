@@ -55,3 +55,4 @@ def test_planner_chat_trigger_plan_review(db_session):
         user_message="请帮我安排明天的学习任务",
     )
     assert "trigger_plan_review" in turn.tools_used
+    assert "已提交" in turn.assistant_message or "复审" in turn.assistant_message

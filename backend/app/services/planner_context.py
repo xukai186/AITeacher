@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.models import MasterPlan, MasterPlanVersion, StudentSubject
 from app.services.agent_context import get_subject_context
-from app.services.plan_review import PlanReviewResult, PlanReviewService
+from app.services.plan_review_jobs import PlanReviewJobService
 
 
 def get_master_plan_summary(db: Session, *, student_user_id: uuid.UUID) -> dict[str, Any]:
@@ -65,6 +65,10 @@ def trigger_plan_review(
     subject_code: str | None = None,
     target_date: date | None = None,
 ) -> list[dict[str, Any]]:
+    from datetime import timedelta
+
+    day = target_date or (date.today() + timedelta(days=1))
+
     if subject_code:
         codes = [subject_code]
     else:
@@ -79,24 +83,24 @@ def trigger_plan_review(
             .all()
         )
 
-    svc = PlanReviewService()
+    svc = PlanReviewJobService()
     out: list[dict[str, Any]] = []
     for code in codes:
-        review: PlanReviewResult = svc.run_subject_review(
+        enqueued = svc.enqueue(
             db,
             student_user_id=student_user_id,
             subject_code=code,
+            target_date=day,
             trigger="planner_chat",
-            target_date=target_date,
         )
+        job = svc.get_for_student(db, job_id=enqueued.job_id, student_user_id=student_user_id)
         out.append(
             {
+                "job_id": str(enqueued.job_id),
                 "subject_code": code,
-                "target_date": review.target_date.isoformat(),
-                "created_count": review.apply.created_count,
-                "skipped_count": review.apply.skipped_count,
-                "scheduled_minutes": review.trim.scheduled_minutes_after,
-                "warnings": review.warnings,
+                "target_date": day.isoformat(),
+                "status": job.status if job else "pending",
+                "created": enqueued.created,
             }
         )
     return out

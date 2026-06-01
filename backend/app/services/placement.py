@@ -20,7 +20,7 @@ from app.schemas.placement import (
     PlacementSubjectStatus,
 )
 from app.services.mastery import MasteryService
-from app.services.plan_review_jobs import PlanReviewJobRunner, PlanReviewJobService
+from app.services.plan_review_jobs import PlanReviewJobService
 from app.services.planning import PlanningService
 from app.services.tasks import TaskGenerator
 from app.services.wrong_book import WrongBookService
@@ -317,8 +317,6 @@ class PlacementService:
             target_date=date.today() + timedelta(days=1),
             trigger="placement_completed",
         )
-        PlanReviewJobRunner().run_pending(db, limit=5)
-
         db.commit()
         return PlacementSubmitOut(
             paper_id=paper_id,

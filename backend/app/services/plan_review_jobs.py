@@ -113,6 +113,18 @@ class PlanReviewJobService:
         db.flush()
         return EnqueueResult(job_id=job.id, created=True)
 
+    def get_for_student(
+        self,
+        db: Session,
+        *,
+        job_id: uuid.UUID,
+        student_user_id: uuid.UUID,
+    ) -> PlanReviewJob | None:
+        job = db.get(PlanReviewJob, job_id)
+        if job is None or job.student_user_id != student_user_id:
+            return None
+        return job
+
 
 class PlanReviewJobRunner:
     """Job runner; can be used by CLI worker or invoked inline."""
