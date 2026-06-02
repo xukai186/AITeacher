@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 import uuid
 from dataclasses import dataclass
@@ -208,10 +209,13 @@ class ModelGateway:
         tools: list[dict[str, Any]] | None,
         params: dict,
     ) -> ModelCompletion:
-        base_url = params.get("base_url")
-        api_key = params.get("api_key")
+        base_url = params.get("base_url") or os.getenv("AIT_LLM_BASE_URL") or ""
+        api_key = params.get("api_key") or os.getenv("AIT_LLM_API_KEY") or ""
         if not base_url or not api_key:
-            raise ValueError("openai_compat requires params.base_url and params.api_key")
+            raise ValueError(
+                "openai_compat requires base_url/api_key in ModelPolicy.params "
+                "or env vars AIT_LLM_BASE_URL / AIT_LLM_API_KEY"
+            )
 
         url = f"{base_url.rstrip('/')}/v1/chat/completions"
         headers = {"Authorization": f"Bearer {api_key}"}
