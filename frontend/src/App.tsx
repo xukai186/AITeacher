@@ -5,6 +5,7 @@ import ProtectedRoute from "@/components/ProtectedRoute";
 import StudentsList from "@/pages/admin/StudentsList";
 import StaffList from "@/pages/admin/StaffList";
 import PackagesList from "@/pages/admin/PackagesList";
+import ModelPolicies from "@/pages/admin/ModelPolicies";
 import MyStudents from "@/pages/staff/MyStudents";
 import StudentDetail from "@/pages/org/StudentDetail";
 import Workspace from "@/pages/student/Workspace";
@@ -33,6 +34,7 @@ export default function App() {
         <Route path="/admin/students/:studentId" element={<StudentDetail />} />
         <Route path="/admin/staff" element={<StaffList />} />
         <Route path="/admin/packages" element={<PackagesList />} />
+        <Route path="/admin/model-policies" element={<ModelPolicies />} />
       </Route>
 
       <Route

@@ -8,6 +8,7 @@ const NAV_BY_ROLE: Record<string, NavItem[]> = {
     { to: "/admin/students", label: "学员" },
     { to: "/admin/staff", label: "员工" },
     { to: "/admin/packages", label: "套餐" },
+    { to: "/admin/model-policies", label: "模型策略" },
   ],
   org_staff: [{ to: "/staff/students", label: "我的学员" }],
   student: [
