@@ -14,10 +14,12 @@ One-on-one AI tutors for graduate-exam students. See `docs/superpowers/specs/202
 ```bash
 docker compose up -d           # PostgreSQL on localhost:5433
 cd backend && uv sync && uv run alembic upgrade head && uv run python -m app.seed
-uv run uvicorn app.main:app --reload --port 8000
+uv run uvicorn app.main:app --reload --host :: --port 8000
 
 cd ../frontend && npm install && npm run dev
 ```
+
+Note: `--host ::` makes the API listen on IPv6. This avoids Vite/Node resolving `localhost` to `::1` and failing to proxy requests to the backend.
 
 Default admin: `admin@demo.example` / `admin123`.
 

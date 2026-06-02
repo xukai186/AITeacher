@@ -26,7 +26,7 @@ Seed creates:
 ## Run
 
 ```bash
-uvicorn app.main:app --reload --port 8000
+uvicorn app.main:app --reload --host :: --port 8000
 ```
 
 ## Background workers (production)
