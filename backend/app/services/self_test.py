@@ -22,6 +22,7 @@ from app.services.grading import GradingService
 from app.services.mastery import MasteryService
 from app.services.plan_review_jobs import PlanReviewJobService
 from app.services.self_test_eligibility import SelfTestEligibilityService
+from app.services.learning_events import LearningEventService
 from app.services.wrong_book import WrongBookService
 from app.services.wrong_book_followup import WrongBookFollowUpService
 from app.seed_syllabus import seed_minimal_syllabus
@@ -235,6 +236,15 @@ class SelfTestService:
 
         db.flush()
         WrongBookService.ingest_from_self_test_submission(db, submission.id)
+        LearningEventService.record(
+            db,
+            student_user_id=student_user_id,
+            event_type="paper_submitted",
+            subject_code=paper.subject_code,
+            ref_type="self_test_submission",
+            ref_id=submission.id,
+            payload={"paper_id": str(paper_id), "total_score": total_score},
+        )
         MasteryService.update_from_self_test_submission(db, submission.id)
         WrongBookFollowUpService().schedule_after_self_test(
             db,

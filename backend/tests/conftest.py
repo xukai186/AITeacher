@@ -35,6 +35,18 @@ def _sync_test_schema(connection) -> None:
                     "REFERENCES master_plan_versions(id) ON DELETE SET NULL"
                 )
             )
+    if "wrong_book_items" in insp.get_table_names():
+        wb_cols = {c["name"] for c in insp.get_columns("wrong_book_items")}
+        for col, ddl in (
+            ("status", "VARCHAR(40) NOT NULL DEFAULT 'active'"),
+            ("wrong_count", "INTEGER NOT NULL DEFAULT 1"),
+            ("consecutive_correct_count", "INTEGER NOT NULL DEFAULT 0"),
+            ("first_correct_at", "TIMESTAMP WITH TIME ZONE"),
+            ("last_practice_at", "TIMESTAMP WITH TIME ZONE"),
+            ("mastered_at", "TIMESTAMP WITH TIME ZONE"),
+        ):
+            if col not in wb_cols:
+                connection.execute(text(f"ALTER TABLE wrong_book_items ADD COLUMN {col} {ddl}"))
 
 
 @pytest.fixture

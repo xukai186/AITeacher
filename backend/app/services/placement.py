@@ -23,6 +23,7 @@ from app.services.mastery import MasteryService
 from app.services.plan_review_jobs import PlanReviewJobService
 from app.services.planning import PlanningService
 from app.services.tasks import TaskGenerator
+from app.services.learning_events import LearningEventService
 from app.services.wrong_book import WrongBookService
 from app.seed_syllabus import seed_minimal_syllabus
 
@@ -310,6 +311,15 @@ class PlacementService:
 
         db.flush()
         WrongBookService.ingest_from_placement_submission(db, submission.id)
+        LearningEventService.record(
+            db,
+            student_user_id=student_user_id,
+            event_type="paper_submitted",
+            subject_code=paper.subject_code,
+            ref_type="placement_submission",
+            ref_id=submission.id,
+            payload={"paper_id": str(paper_id), "total_score": total_score},
+        )
         PlanReviewJobService().enqueue(
             db,
             student_user_id=student_user_id,

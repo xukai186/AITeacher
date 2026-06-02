@@ -27,6 +27,7 @@ class ReportService:
         wb_stmt = select(WrongBookItem).where(
             WrongBookItem.student_user_id == q.student_user_id,
             WrongBookItem.created_at >= cutoff,
+            WrongBookItem.status == "active",
         )
         if q.subject_code:
             wb_stmt = wb_stmt.where(WrongBookItem.subject_code == q.subject_code)
@@ -37,6 +38,7 @@ class ReportService:
             .where(
                 WrongBookItem.student_user_id == q.student_user_id,
                 WrongBookItem.created_at >= cutoff,
+                WrongBookItem.status == "active",
             )
             .group_by(WrongBookItem.source_type)
         )
@@ -117,7 +119,10 @@ class ReportService:
     def overview(db: Session, q: ReportQuery) -> ReportOverviewOut:
         source_counts_stmt = (
             select(WrongBookItem.source_type, func.count(WrongBookItem.id))
-            .where(WrongBookItem.student_user_id == q.student_user_id)
+            .where(
+                WrongBookItem.student_user_id == q.student_user_id,
+                WrongBookItem.status == "active",
+            )
             .group_by(WrongBookItem.source_type)
         )
         if q.subject_code:
@@ -126,7 +131,10 @@ class ReportService:
 
         weak_stmt = (
             select(WrongBookItem.knowledge_node_id, SyllabusNode.name, func.count(WrongBookItem.id))
-            .where(WrongBookItem.student_user_id == q.student_user_id)
+            .where(
+                WrongBookItem.student_user_id == q.student_user_id,
+                WrongBookItem.status == "active",
+            )
             .outerjoin(SyllabusNode, SyllabusNode.id == WrongBookItem.knowledge_node_id)
             .group_by(WrongBookItem.knowledge_node_id)
             .group_by(SyllabusNode.name)

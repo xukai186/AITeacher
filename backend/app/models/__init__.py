@@ -2,6 +2,7 @@ from app.models.audit import AuditLog
 from app.models.base import Base
 from app.models.chat import AgentType, ChatMessage, ChatSession
 from app.models.model_policy import ModelPolicy
+from app.models.learning_event import LearningEvent
 from app.models.mastery import MasterySnapshot
 from app.models.organization import Organization
 from app.models.package import Package
@@ -33,6 +34,7 @@ __all__ = [
     "MasterPlan",
     "MasterPlanVersion",
     "ModelPolicy",
+    "LearningEvent",
     "MasterySnapshot",
     "Organization",
     "Package",
