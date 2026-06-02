@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import uuid
 
+from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -16,9 +17,48 @@ from app.models import (
     SelfTestSubmission,
     WrongBookItem,
 )
+from app.services.learning_events import LearningEventService
 
 
 class WrongBookService:
+    @staticmethod
+    def _add_wrong_item(
+        db: Session,
+        *,
+        student_user_id: uuid.UUID,
+        subject_code: str,
+        knowledge_node_id: uuid.UUID | None,
+        source_type: str,
+        source_id: uuid.UUID,
+        question_snapshot: dict,
+        answer_snapshot: dict,
+        correct_snapshot: dict,
+    ) -> WrongBookItem:
+        item = WrongBookItem(
+            student_user_id=student_user_id,
+            subject_code=subject_code,
+            knowledge_node_id=knowledge_node_id,
+            source_type=source_type,
+            source_id=source_id,
+            question_snapshot_json=question_snapshot,
+            answer_snapshot_json=answer_snapshot,
+            correct_snapshot_json=correct_snapshot,
+            status="active",
+            wrong_count=1,
+        )
+        db.add(item)
+        db.flush()
+        LearningEventService.record(
+            db,
+            student_user_id=student_user_id,
+            event_type="wrong_added",
+            subject_code=subject_code,
+            ref_type="wrong_book_item",
+            ref_id=item.id,
+            payload={"source_type": source_type, "source_id": str(source_id)},
+        )
+        return item
+
     @staticmethod
     def ingest_from_placement_submission(db: Session, submission_id: uuid.UUID) -> int:
         submission = db.get(PlacementSubmission, submission_id)
@@ -51,24 +91,23 @@ class WrongBookService:
             if ans.is_correct:
                 continue
 
-            db.add(
-                WrongBookItem(
-                    student_user_id=submission.student_user_id,
-                    subject_code=paper.subject_code,
-                    knowledge_node_id=q.knowledge_node_id,
-                    source_type="placement",
-                    source_id=submission.id,
-                    question_snapshot_json={
-                        "id": str(q.id),
-                        "seq": q.seq,
-                        "q_type": q.q_type,
-                        "stem": q.stem,
-                        "choices": q.choices_json,
-                        "points": q.points,
-                    },
-                    answer_snapshot_json={"content": ans.content},
-                    correct_snapshot_json={"answer_key": q.answer_key},
-                )
+            WrongBookService._add_wrong_item(
+                db,
+                student_user_id=submission.student_user_id,
+                subject_code=paper.subject_code,
+                knowledge_node_id=q.knowledge_node_id,
+                source_type="placement",
+                source_id=submission.id,
+                question_snapshot={
+                    "id": str(q.id),
+                    "seq": q.seq,
+                    "q_type": q.q_type,
+                    "stem": q.stem,
+                    "choices": q.choices_json,
+                    "points": q.points,
+                },
+                answer_snapshot={"content": ans.content},
+                correct_snapshot={"answer_key": q.answer_key},
             )
             created += 1
 
@@ -108,7 +147,6 @@ class WrongBookService:
                 continue
             key = (q.answer_key or "").strip()
 
-            # MVP: treat as wrong if objective and mismatch, or subjective has no answer_key.
             is_wrong = True
             if q.q_type in ("single_choice", "multi_choice", "fill_blank"):
                 is_wrong = ans.content.strip() != key
@@ -116,29 +154,37 @@ class WrongBookService:
             if not is_wrong:
                 continue
 
-            db.add(
-                WrongBookItem(
-                    student_user_id=submission.student_user_id,
-                    subject_code=paper.subject_code,
-                    knowledge_node_id=q.knowledge_node_id,
-                    source_type="self_test",
-                    source_id=submission.id,
-                    question_snapshot_json={
-                        "id": str(q.id),
-                        "seq": q.seq,
-                        "q_type": q.q_type,
-                        "stem": q.stem,
-                        "choices": q.choices_json,
-                        "points": q.points,
-                    },
-                    answer_snapshot_json={"content": ans.content},
-                    correct_snapshot_json={"answer_key": q.answer_key},
-                )
+            WrongBookService._add_wrong_item(
+                db,
+                student_user_id=submission.student_user_id,
+                subject_code=paper.subject_code,
+                knowledge_node_id=q.knowledge_node_id,
+                source_type="self_test",
+                source_id=submission.id,
+                question_snapshot={
+                    "id": str(q.id),
+                    "seq": q.seq,
+                    "q_type": q.q_type,
+                    "stem": q.stem,
+                    "choices": q.choices_json,
+                    "points": q.points,
+                },
+                answer_snapshot={"content": ans.content},
+                correct_snapshot={"answer_key": q.answer_key},
             )
             created += 1
 
         db.flush()
         return created
+
+    @staticmethod
+    def get_item(
+        db: Session, student_user_id: uuid.UUID, item_id: uuid.UUID
+    ) -> WrongBookItem:
+        item = db.get(WrongBookItem, item_id)
+        if item is None or item.student_user_id != student_user_id:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "wrong book item not found")
+        return item
 
     @staticmethod
     def list_items(
@@ -147,6 +193,7 @@ class WrongBookService:
         subject_code: str | None = None,
         source_type: str | None = None,
         knowledge_node_id: uuid.UUID | None = None,
+        status: str | None = None,
         limit: int = 50,
         offset: int = 0,
     ) -> list[WrongBookItem]:
@@ -157,7 +204,10 @@ class WrongBookService:
             stmt = stmt.where(WrongBookItem.source_type == source_type)
         if knowledge_node_id:
             stmt = stmt.where(WrongBookItem.knowledge_node_id == knowledge_node_id)
+        if status:
+            stmt = stmt.where(WrongBookItem.status == status)
+        else:
+            stmt = stmt.where(WrongBookItem.status.in_(("active", "mastered")))
         stmt = stmt.order_by(WrongBookItem.created_at.desc())
         stmt = stmt.limit(limit).offset(offset)
         return db.execute(stmt).scalars().all()
-

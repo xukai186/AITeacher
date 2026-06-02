@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSearchParams } from "react-router-dom";
 import { fetchStudentMe } from "@/api/me";
-import { listWrongBook } from "@/api/wrongBook";
+import { archiveWrongItem, listWrongBook, practiceWrongItem } from "@/api/wrongBook";
 
 const SUBJECT_LABELS: Record<string, string> = {
   politics: "政治",
@@ -16,7 +16,57 @@ const SOURCE_LABELS: Record<string, string> = {
   placement: "测评",
 };
 
+const STATUS_LABELS: Record<string, string> = {
+  active: "待掌握",
+  mastered: "已掌握",
+  archived: "已归档",
+};
+
+function WrongBookPractice({ itemId, answerKey }: { itemId: string; answerKey: string }) {
+  const qc = useQueryClient();
+  const [content, setContent] = useState("");
+  const practice = useMutation({
+    mutationFn: () => practiceWrongItem(itemId, content),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["student", "wrong_book"] });
+      setContent("");
+    },
+  });
+
+  return (
+    <div className="border-t pt-2 space-y-2">
+      <div className="text-sm text-slate-600">重做（客观题填选项字母，如 A）</div>
+      <div className="flex gap-2">
+        <input
+          className="border rounded px-2 py-1 text-sm flex-1"
+          placeholder={answerKey ? `参考答案: ${answerKey}` : "你的答案"}
+          value={content}
+          onChange={(e) => setContent(e.target.value)}
+        />
+        <button
+          type="button"
+          className="px-3 py-1 bg-slate-900 text-white rounded text-sm disabled:opacity-50"
+          disabled={!content.trim() || practice.isPending}
+          onClick={() => practice.mutate()}
+        >
+          提交
+        </button>
+      </div>
+      {practice.data && (
+        <p className={`text-sm ${practice.data.is_correct ? "text-green-700" : "text-red-600"}`}>
+          {practice.data.is_correct ? "回答正确" : "回答错误"}
+          {practice.data.mastered ? " — 已标记为掌握！" : ""}
+          {!practice.data.mastered && practice.data.consecutive_correct_count === 1
+            ? " — 间隔至少 1 天后再做对一次可标记掌握"
+            : ""}
+        </p>
+      )}
+    </div>
+  );
+}
+
 export default function WrongBook() {
+  const qc = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
   const me = useQuery({ queryKey: ["student", "me"], queryFn: fetchStudentMe });
   // "__default__" means use first subject in profile.
@@ -143,8 +193,17 @@ export default function WrongBook() {
           <ul className="space-y-3">
             {allItems.map((i) => (
               <li key={i.id} className="bg-white shadow rounded p-4 space-y-2">
-                <div className="text-sm text-slate-500">
-                  {SUBJECT_LABELS[i.subject_code] ?? i.subject_code} · {SOURCE_LABELS[i.source_type] ?? i.source_type}
+                <div className="text-sm text-slate-500 flex justify-between">
+                  <span>
+                    {SUBJECT_LABELS[i.subject_code] ?? i.subject_code} ·{" "}
+                    {SOURCE_LABELS[i.source_type] ?? i.source_type}
+                  </span>
+                  <span className="font-medium text-slate-700">
+                    {STATUS_LABELS[i.status] ?? i.status}
+                    {i.consecutive_correct_count > 0 && i.status === "active"
+                      ? ` (${i.consecutive_correct_count}/2)`
+                      : ""}
+                  </span>
                 </div>
                 <div className="font-medium">
                   {String((i.question_snapshot_json as any)?.stem ?? "（无题干）")}
@@ -161,6 +220,24 @@ export default function WrongBook() {
                     {String((i.correct_snapshot_json as any)?.answer_key ?? "")}
                   </div>
                 </div>
+                {i.status === "active" && (
+                  <WrongBookPractice
+                    itemId={i.id}
+                    answerKey={String((i.correct_snapshot_json as any)?.answer_key ?? "")}
+                  />
+                )}
+                {i.status === "mastered" && (
+                  <button
+                    type="button"
+                    className="text-sm text-slate-600 underline"
+                    onClick={async () => {
+                      await archiveWrongItem(i.id);
+                      qc.invalidateQueries({ queryKey: ["student", "wrong_book"] });
+                    }}
+                  >
+                    归档
+                  </button>
+                )}
               </li>
             ))}
           </ul>
