@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import hashlib
 import uuid
 
 from datetime import date, timedelta
@@ -16,6 +15,7 @@ from app.models import (
     SelfTestSubmission,
     StudentSubject,
     SyllabusNode,
+    User,
 )
 from app.schemas.self_test import SelfTestSubmitIn
 from app.services.grading import GradingService
@@ -25,10 +25,10 @@ from app.services.self_test_eligibility import SelfTestEligibilityService
 from app.services.learning_events import LearningEventService
 from app.services.wrong_book import WrongBookService
 from app.services.wrong_book_followup import WrongBookFollowUpService
+from app.services.paper_gen import DEFAULT_QUESTION_COUNT, PaperGenService
 from app.seed_syllabus import seed_minimal_syllabus
 
-QUESTIONS_PER_PAPER = 10
-CHOICE_KEYS = ("A", "B", "C", "D")
+QUESTIONS_PER_PAPER = DEFAULT_QUESTION_COUNT
 
 
 class SelfTestService:
@@ -54,11 +54,6 @@ class SelfTestService:
             return []
         parent_ids = {n.parent_id for n in nodes if n.parent_id is not None}
         return [n for n in nodes if n.id not in parent_ids]
-
-    @staticmethod
-    def _answer_key(student_user_id: uuid.UUID, subject_code: str, seq: int) -> str:
-        digest = hashlib.sha256(f"{student_user_id}:{subject_code}:{seq}".encode()).hexdigest()
-        return CHOICE_KEYS[int(digest[:8], 16) % len(CHOICE_KEYS)]
 
     @classmethod
     def generate(
@@ -91,31 +86,50 @@ class SelfTestService:
         if enabled is None:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, "subject not enabled")
 
-        paper = SelfTestPaper(student_user_id=student_user_id, subject_code=subject_code, status="ready")
+        student = db.get(User, student_user_id)
+        if student is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "student not found")
+
+        paper = SelfTestPaper(
+            student_user_id=student_user_id,
+            subject_code=subject_code,
+            status="ready",
+            source="ai",
+        )
         db.add(paper)
         db.flush()
 
-        leaves = cls._leaf_nodes(db, subject_code)
-        if not leaves:
+        try:
+            generated = PaperGenService().generate_for_self_test(
+                db,
+                org_id=student.org_id,
+                student_user_id=student_user_id,
+                subject_code=subject_code,
+                question_count=QUESTIONS_PER_PAPER,
+            )
+        except ValueError as exc:
             raise HTTPException(
                 status.HTTP_503_SERVICE_UNAVAILABLE,
-                "Syllabus not seeded for this subject",
+                str(exc),
+            ) from exc
+
+        if not generated:
+            raise HTTPException(
+                status.HTTP_503_SERVICE_UNAVAILABLE,
+                "Failed to generate self-test questions",
             )
 
-        for seq in range(1, QUESTIONS_PER_PAPER + 1):
-            node = leaves[(seq - 1) % len(leaves)]
-            key = cls._answer_key(student_user_id, subject_code, seq)
-            choices = [{"key": k, "text": f"{node.name} — 选项{k}"} for k in CHOICE_KEYS]
+        for q in generated:
             db.add(
                 SelfTestQuestion(
                     paper_id=paper.id,
-                    seq=seq,
-                    knowledge_node_id=node.id,
-                    q_type="single_choice",
-                    stem=f"【{node.name}】请选择最符合要求的选项（第{seq}题）",
-                    choices_json=choices,
-                    answer_key=key,
-                    points=1,
+                    seq=q.seq,
+                    knowledge_node_id=q.knowledge_node_id,
+                    q_type=q.q_type,
+                    stem=q.stem,
+                    choices_json=q.choices_json,
+                    answer_key=q.answer_key,
+                    points=q.points,
                     rubric_json=None,
                 )
             )
