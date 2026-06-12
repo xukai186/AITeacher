@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import hashlib
 import uuid
 from datetime import date, timedelta
 
@@ -8,7 +7,16 @@ from fastapi import HTTPException, status
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.models import MasterySnapshot, PlacementAnswer, PlacementPaper, PlacementResult, PlacementSubmission, StudentSubject, SyllabusNode
+from app.models import (
+    MasterySnapshot,
+    PlacementAnswer,
+    PlacementPaper,
+    PlacementResult,
+    PlacementSubmission,
+    StudentSubject,
+    SyllabusNode,
+    User,
+)
 from app.models.placement import PlacementQuestion
 from app.schemas.placement import (
     PlacementPaperDetail,
@@ -25,10 +33,10 @@ from app.services.planning import PlanningService
 from app.services.tasks import TaskGenerator
 from app.services.learning_events import LearningEventService
 from app.services.wrong_book import WrongBookService
+from app.services.paper_gen import DEFAULT_QUESTION_COUNT, PaperGenService
 from app.seed_syllabus import seed_minimal_syllabus
 
-QUESTIONS_PER_SUBJECT = 10
-CHOICE_KEYS = ("A", "B", "C", "D")
+QUESTIONS_PER_SUBJECT = DEFAULT_QUESTION_COUNT
 Q_TYPE = "single_choice"
 
 
@@ -46,27 +54,6 @@ class PlacementService:
                 "Syllabus not seeded; ask an admin to run syllabus seed",
             )
 
-    @staticmethod
-    def _leaf_nodes(db: Session, subject_code: str) -> list[SyllabusNode]:
-        nodes = list(
-            db.execute(
-                select(SyllabusNode)
-                .where(SyllabusNode.subject_code == subject_code)
-                .order_by(SyllabusNode.name)
-            )
-            .scalars()
-            .all()
-        )
-        if not nodes:
-            return []
-        parent_ids = {n.parent_id for n in nodes if n.parent_id is not None}
-        return [n for n in nodes if n.id not in parent_ids]
-
-    @staticmethod
-    def _answer_key(student_user_id: uuid.UUID, subject_code: str, seq: int) -> str:
-        digest = hashlib.sha256(f"{student_user_id}:{subject_code}:{seq}".encode()).hexdigest()
-        return CHOICE_KEYS[int(digest[:8], 16) % len(CHOICE_KEYS)]
-
     @classmethod
     def _generate_questions(
         cls,
@@ -75,30 +62,41 @@ class PlacementService:
         student_user_id: uuid.UUID,
         subject_code: str,
     ) -> None:
-        leaves = cls._leaf_nodes(db, subject_code)
-        if not leaves:
+        student = db.get(User, student_user_id)
+        if student is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "student not found")
+
+        try:
+            generated = PaperGenService().generate_for_placement(
+                db,
+                org_id=student.org_id,
+                student_user_id=student_user_id,
+                subject_code=subject_code,
+                question_count=QUESTIONS_PER_SUBJECT,
+            )
+        except ValueError as exc:
             raise HTTPException(
                 status.HTTP_503_SERVICE_UNAVAILABLE,
-                f"No syllabus nodes for subject {subject_code}; ask an admin to seed syllabus",
+                str(exc),
+            ) from exc
+
+        if not generated:
+            raise HTTPException(
+                status.HTTP_503_SERVICE_UNAVAILABLE,
+                "Failed to generate placement questions",
             )
 
-        for seq in range(1, QUESTIONS_PER_SUBJECT + 1):
-            node = leaves[(seq - 1) % len(leaves)]
-            key = cls._answer_key(student_user_id, subject_code, seq)
-            choices = [
-                {"key": letter, "text": f"{node.name} — 选项{letter}"}
-                for letter in CHOICE_KEYS
-            ]
+        for q in generated:
             db.add(
                 PlacementQuestion(
                     paper_id=paper.id,
-                    seq=seq,
-                    knowledge_node_id=node.id,
-                    q_type=Q_TYPE,
-                    stem=f"【{node.name}】请选择最符合考纲要求的选项（第{seq}题）",
-                    choices_json=choices,
-                    answer_key=key,
-                    points=1,
+                    seq=q.seq,
+                    knowledge_node_id=q.knowledge_node_id,
+                    q_type=q.q_type or Q_TYPE,
+                    stem=q.stem,
+                    choices_json=q.choices_json,
+                    answer_key=q.answer_key,
+                    points=q.points,
                 )
             )
 

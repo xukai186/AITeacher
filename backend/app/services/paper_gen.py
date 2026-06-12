@@ -4,6 +4,7 @@ import hashlib
 import json
 import uuid
 from dataclasses import dataclass
+from typing import Literal
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -14,6 +15,7 @@ from app.services.model_gateway import ModelGateway, ModelGatewayRequest
 
 CHOICE_KEYS = ("A", "B", "C", "D")
 DEFAULT_QUESTION_COUNT = 10
+PaperPurpose = Literal["self_test", "placement"]
 
 
 @dataclass(frozen=True)
@@ -40,6 +42,43 @@ class PaperGenService:
         subject_code: str,
         question_count: int = DEFAULT_QUESTION_COUNT,
     ) -> list[GeneratedQuestion]:
+        return self.generate(
+            db,
+            org_id=org_id,
+            student_user_id=student_user_id,
+            subject_code=subject_code,
+            question_count=question_count,
+            purpose="self_test",
+        )
+
+    def generate_for_placement(
+        self,
+        db: Session,
+        *,
+        org_id: uuid.UUID,
+        student_user_id: uuid.UUID,
+        subject_code: str,
+        question_count: int = DEFAULT_QUESTION_COUNT,
+    ) -> list[GeneratedQuestion]:
+        return self.generate(
+            db,
+            org_id=org_id,
+            student_user_id=student_user_id,
+            subject_code=subject_code,
+            question_count=question_count,
+            purpose="placement",
+        )
+
+    def generate(
+        self,
+        db: Session,
+        *,
+        org_id: uuid.UUID,
+        student_user_id: uuid.UUID,
+        subject_code: str,
+        question_count: int = DEFAULT_QUESTION_COUNT,
+        purpose: PaperPurpose = "self_test",
+    ) -> list[GeneratedQuestion]:
         policy = self._policy(db, org_id)
         overview = ReportService.overview(
             db,
@@ -55,7 +94,11 @@ class PaperGenService:
 
         if policy is None or policy.provider == "mock":
             return self._mock_questions(
-                student_user_id, subject_code, target_nodes, question_count
+                student_user_id,
+                subject_code,
+                target_nodes,
+                question_count,
+                purpose=purpose,
             )
 
         try:
@@ -66,6 +109,7 @@ class PaperGenService:
                 subject_code=subject_code,
                 target_nodes=target_nodes,
                 question_count=question_count,
+                purpose=purpose,
             )
             parsed = self._parse_llm_questions(
                 raw, target_nodes=target_nodes, question_count=question_count
@@ -76,7 +120,11 @@ class PaperGenService:
             pass
 
         return self._deterministic_questions(
-            student_user_id, subject_code, target_nodes, question_count
+            student_user_id,
+            subject_code,
+            target_nodes,
+            question_count,
+            purpose=purpose,
         )
 
     @staticmethod
@@ -137,6 +185,12 @@ class PaperGenService:
             ordered = list(leaves)
         return ordered
 
+    @staticmethod
+    def _purpose_label(purpose: PaperPurpose) -> str:
+        if purpose == "placement":
+            return "入学摸底测评"
+        return "自测卷"
+
     def _call_llm(
         self,
         provider: str,
@@ -146,13 +200,14 @@ class PaperGenService:
         subject_code: str,
         target_nodes: list[SyllabusNode],
         question_count: int,
+        purpose: PaperPurpose,
     ) -> str:
         nodes_payload = [
             {"id": str(n.id), "name": n.name} for n in target_nodes[:question_count]
         ]
         prompt = "\n".join(
             [
-                "你是考研辅导命题老师。请为自测卷生成选择题。",
+                f"你是考研辅导命题老师。请为{self._purpose_label(purpose)}生成选择题。",
                 f"科目代码：{subject_code}",
                 f"需要题目数量：{question_count}",
                 "优先覆盖以下知识点（薄弱点优先）：",
@@ -254,12 +309,26 @@ class PaperGenService:
         digest = hashlib.sha256(f"{student_user_id}:{subject_code}:{seq}".encode()).hexdigest()
         return CHOICE_KEYS[int(digest[:8], 16) % len(CHOICE_KEYS)]
 
+    @staticmethod
+    def _mock_stem(node_name: str, seq: int, purpose: PaperPurpose) -> str:
+        if purpose == "placement":
+            return f"【摸底·{node_name}】请选择最符合考纲要求的选项（第{seq}题）"
+        return f"【薄弱巩固·{node_name}】请选择最符合考纲要求的选项（第{seq}题）"
+
+    @staticmethod
+    def _fallback_stem(node_name: str, seq: int, purpose: PaperPurpose) -> str:
+        if purpose == "placement":
+            return f"【{node_name}】请选择最符合考纲要求的选项（第{seq}题）"
+        return f"【{node_name}】请选择最符合要求的选项（第{seq}题）"
+
     def _mock_questions(
         self,
         student_user_id: uuid.UUID,
         subject_code: str,
         target_nodes: list[SyllabusNode],
         question_count: int,
+        *,
+        purpose: PaperPurpose,
     ) -> list[GeneratedQuestion]:
         out: list[GeneratedQuestion] = []
         for seq in range(1, question_count + 1):
@@ -271,7 +340,7 @@ class PaperGenService:
                     seq=seq,
                     knowledge_node_id=node.id,
                     q_type="single_choice",
-                    stem=f"【薄弱巩固·{node.name}】请选择最符合考纲要求的选项（第{seq}题）",
+                    stem=self._mock_stem(node.name, seq, purpose),
                     choices_json=choices,
                     answer_key=key,
                     points=1,
@@ -285,6 +354,8 @@ class PaperGenService:
         subject_code: str,
         target_nodes: list[SyllabusNode],
         question_count: int,
+        *,
+        purpose: PaperPurpose,
     ) -> list[GeneratedQuestion]:
         out: list[GeneratedQuestion] = []
         for seq in range(1, question_count + 1):
@@ -296,7 +367,7 @@ class PaperGenService:
                     seq=seq,
                     knowledge_node_id=node.id,
                     q_type="single_choice",
-                    stem=f"【{node.name}】请选择最符合要求的选项（第{seq}题）",
+                    stem=self._fallback_stem(node.name, seq, purpose),
                     choices_json=choices,
                     answer_key=key,
                     points=1,
