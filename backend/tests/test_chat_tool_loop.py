@@ -2,7 +2,7 @@ import json
 
 from app.auth.security import hash_password
 from app.models import ModelPolicy, StudentProfile, StudentSubject, UserRole
-from app.services.chat_tool_loop import ChatToolLoop
+from app.services.chat_tool_loop import TOOL_CALLS_PREFIX, ChatToolLoop
 from app.services.model_gateway import ModelGateway
 from app.services.planning import PlanningService
 from tests.factories import make_org, make_user
@@ -116,3 +116,54 @@ def test_openai_compat_tool_loop_roundtrip():
     )
     assert len(completion.tool_calls) == 1
     assert completion.tool_calls[0].name == "get_subject_context"
+
+
+def test_chat_loop_returns_error_message_when_provider_fails(db_session):
+    student = _seed_student(db_session)
+
+    class BrokenGateway(ModelGateway):
+        def complete(self, **kwargs):
+            raise RuntimeError("404 model not found")
+
+    loop = ChatToolLoop(model_gateway=BrokenGateway())
+    turn = loop.run(
+        db_session,
+        student_user_id=student.id,
+        agent_type="subject",
+        subject_code="english",
+        provider="openai_compat",
+        model="bad-model",
+        params={"base_url": "https://example.invalid", "api_key": "k"},
+        history_messages=[],
+        user_message="你好",
+    )
+    assert "模型调用失败" in turn.assistant_message
+    assert "404 model not found" in turn.assistant_message
+
+
+def test_history_from_db_rows_keeps_tool_arguments_json_string():
+    class Row:
+        def __init__(self, role: str, content: str):
+            self.role = role
+            self.content = content
+
+    tool_payload = TOOL_CALLS_PREFIX + json.dumps(
+        [{"id": "call_1", "name": "get_subject_context", "arguments": "{}"}]
+    )
+    rows = [
+        Row("user", "你好"),
+        Row("assistant", tool_payload),
+        Row(
+            "tool",
+            json.dumps(
+                {
+                    "tool_call_id": "call_1",
+                    "name": "get_subject_context",
+                    "result": {"subject_code": "english"},
+                }
+            ),
+        ),
+        Row("assistant", "学情已汇总。"),
+    ]
+    history = ChatToolLoop.history_from_db_rows(rows)
+    assert history[1]["tool_calls"][0]["function"]["arguments"] == "{}"

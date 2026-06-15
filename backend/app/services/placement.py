@@ -4,7 +4,7 @@ import uuid
 from datetime import date, timedelta
 
 from fastapi import HTTPException, status
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from app.models import (
@@ -54,14 +54,58 @@ class PlacementService:
                 "Syllabus not seeded; ask an admin to run syllabus seed",
             )
 
+    @staticmethod
+    def _legacy_template_stem(stem: str) -> bool:
+        return "请选择最符合考纲要求的选项" in stem and "摸底·" not in stem
+
     @classmethod
-    def _generate_questions(
+    def _needs_regeneration(cls, db: Session, paper_id: uuid.UUID) -> bool:
+        questions = list(
+            db.execute(
+                select(PlacementQuestion).where(PlacementQuestion.paper_id == paper_id)
+            )
+            .scalars()
+            .all()
+        )
+        if not questions:
+            return True
+        return all(cls._legacy_template_stem(q.stem) for q in questions)
+
+    @classmethod
+    def _regenerate_questions(
         cls,
         db: Session,
         paper: PlacementPaper,
         student_user_id: uuid.UUID,
         subject_code: str,
     ) -> None:
+        db.execute(delete(PlacementQuestion).where(PlacementQuestion.paper_id == paper.id))
+        db.flush()
+        db.commit()
+        generated = cls._generate_questions_data(db, paper, student_user_id, subject_code)
+        for q in generated:
+            db.add(
+                PlacementQuestion(
+                    paper_id=paper.id,
+                    seq=q.seq,
+                    knowledge_node_id=q.knowledge_node_id,
+                    q_type=q.q_type or Q_TYPE,
+                    stem=q.stem,
+                    choices_json=q.choices_json,
+                    answer_key=q.answer_key,
+                    points=q.points,
+                )
+            )
+        db.flush()
+
+    @classmethod
+    def _generate_questions_data(
+        cls,
+        db: Session,
+        paper: PlacementPaper,
+        student_user_id: uuid.UUID,
+        subject_code: str,
+    ):
         student = db.get(User, student_user_id)
         if student is None:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "student not found")
@@ -85,8 +129,17 @@ class PlacementService:
                 status.HTTP_503_SERVICE_UNAVAILABLE,
                 "Failed to generate placement questions",
             )
+        return generated
 
-        for q in generated:
+    @classmethod
+    def _generate_questions(
+        cls,
+        db: Session,
+        paper: PlacementPaper,
+        student_user_id: uuid.UUID,
+        subject_code: str,
+    ) -> None:
+        for q in cls._generate_questions_data(db, paper, student_user_id, subject_code):
             db.add(
                 PlacementQuestion(
                     paper_id=paper.id,
@@ -101,6 +154,18 @@ class PlacementService:
             )
 
     @classmethod
+    def _is_submitted(
+        cls, db: Session, paper_id: uuid.UUID, student_user_id: uuid.UUID
+    ) -> bool:
+        existing = db.execute(
+            select(PlacementSubmission.id).where(
+                PlacementSubmission.paper_id == paper_id,
+                PlacementSubmission.student_user_id == student_user_id,
+            )
+        ).scalar_one_or_none()
+        return existing is not None
+
+    @classmethod
     def _get_or_create_paper(
         cls, db: Session, student_user_id: uuid.UUID, subject_code: str
     ) -> PlacementPaper:
@@ -111,6 +176,11 @@ class PlacementService:
             )
         ).scalar_one_or_none()
         if paper is not None:
+            if (
+                not cls._is_submitted(db, paper.id, student_user_id)
+                and cls._needs_regeneration(db, paper.id)
+            ):
+                cls._regenerate_questions(db, paper, student_user_id, subject_code)
             return paper
 
         paper = PlacementPaper(
@@ -120,14 +190,47 @@ class PlacementService:
         )
         db.add(paper)
         db.flush()
-        cls._generate_questions(db, paper, student_user_id, subject_code)
+        cls._regenerate_questions(db, paper, student_user_id, subject_code)
         return paper
 
     @classmethod
-    def start(cls, db: Session, student_user_id: uuid.UUID) -> PlacementStartOut:
+    def _subject_statuses(
+        cls, db: Session, student_user_id: uuid.UUID, subject_codes: list[str]
+    ) -> list[PlacementSubjectStatus]:
+        subjects: list[PlacementSubjectStatus] = []
+        for code in subject_codes:
+            paper = db.execute(
+                select(PlacementPaper).where(
+                    PlacementPaper.student_user_id == student_user_id,
+                    PlacementPaper.subject_code == code,
+                )
+            ).scalar_one_or_none()
+            if paper is None:
+                subjects.append(
+                    PlacementSubjectStatus(subject_code=code, status="pending", paper_id=None)
+                )
+                continue
+            submitted = cls._is_submitted(db, paper.id, student_user_id)
+            subjects.append(
+                PlacementSubjectStatus(
+                    subject_code=code,
+                    status="submitted" if submitted else "ready",
+                    paper_id=paper.id,
+                )
+            )
+        return subjects
+
+    @classmethod
+    def start(
+        cls,
+        db: Session,
+        student_user_id: uuid.UUID,
+        *,
+        subject_code: str | None = None,
+    ) -> PlacementStartOut:
         cls._ensure_syllabus(db)
 
-        subject_codes = list(
+        enabled_codes = list(
             db.execute(
                 select(StudentSubject.subject_code).where(
                     StudentSubject.student_user_id == student_user_id,
@@ -137,21 +240,39 @@ class PlacementService:
             .scalars()
             .all()
         )
-        if not subject_codes:
+        if not enabled_codes:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, "no enabled subjects")
 
-        subjects: list[PlacementSubjectStatus] = []
-        for subject_code in subject_codes:
-            paper = cls._get_or_create_paper(db, student_user_id, subject_code)
-            subjects.append(
-                PlacementSubjectStatus(
-                    subject_code=subject_code,
-                    status="ready",
-                    paper_id=paper.id,
-                )
-            )
+        target_code = subject_code
+        if target_code is None:
+            for code in enabled_codes:
+                paper = db.execute(
+                    select(PlacementPaper).where(
+                        PlacementPaper.student_user_id == student_user_id,
+                        PlacementPaper.subject_code == code,
+                    )
+                ).scalar_one_or_none()
+                if paper is None or not cls._is_submitted(db, paper.id, student_user_id):
+                    target_code = code
+                    break
+            if target_code is None:
+                target_code = enabled_codes[0]
+        elif target_code not in enabled_codes:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "subject not enabled")
+
+        paper = cls._get_or_create_paper(db, student_user_id, target_code)
+        submitted = cls._is_submitted(db, paper.id, student_user_id)
         db.commit()
-        return PlacementStartOut(subjects=subjects)
+
+        subjects = cls._subject_statuses(db, student_user_id, enabled_codes)
+        primary = PlacementSubjectStatus(
+            subject_code=target_code,
+            status="submitted" if submitted else "ready",
+            paper_id=paper.id,
+        )
+        others = [s for s in subjects if s.subject_code != target_code]
+        others.sort(key=lambda item: (0 if item.status == "ready" else 1, item.subject_code))
+        return PlacementStartOut(subjects=[primary, *others])
 
     @classmethod
     def list_papers(cls, db: Session, student_user_id: uuid.UUID) -> list[PlacementPaperSummary]:
@@ -226,21 +347,17 @@ class PlacementService:
         if not questions:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, "paper has no questions")
 
-        submission = db.execute(
-            select(PlacementSubmission).where(
-                PlacementSubmission.paper_id == paper_id,
-                PlacementSubmission.student_user_id == student_user_id,
-            )
-        ).scalar_one_or_none()
-        if submission is None:
-            submission = PlacementSubmission(
-                paper_id=paper_id,
-                student_user_id=student_user_id,
-                status="submitted",
-                submitted_at=func.now(),
-            )
-            db.add(submission)
-            db.flush()
+        if cls._is_submitted(db, paper_id, student_user_id):
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "placement already submitted")
+
+        submission = PlacementSubmission(
+            paper_id=paper_id,
+            student_user_id=student_user_id,
+            status="submitted",
+            submitted_at=func.now(),
+        )
+        db.add(submission)
+        db.flush()
 
         total_score = 0
         correct_by_node: dict[uuid.UUID, tuple[int, int]] = {}
@@ -286,23 +403,23 @@ class PlacementService:
             result.mastery_json = mastery_levels
 
         existing = db.execute(
-            select(MasterySnapshot.id).where(
+            select(MasterySnapshot).where(
                 MasterySnapshot.student_user_id == student_user_id,
                 MasterySnapshot.subject_code == paper.subject_code,
                 MasterySnapshot.version == 1,
             )
         ).scalar_one_or_none()
-        if existing is not None:
-            raise HTTPException(status.HTTP_400_BAD_REQUEST, "placement already submitted")
-
-        db.add(
-            MasterySnapshot(
-                student_user_id=student_user_id,
-                subject_code=paper.subject_code,
-                version=1,
-                mastery_json=mastery_levels,
+        if existing is None:
+            db.add(
+                MasterySnapshot(
+                    student_user_id=student_user_id,
+                    subject_code=paper.subject_code,
+                    version=1,
+                    mastery_json=mastery_levels,
+                )
             )
-        )
+        else:
+            existing.mastery_json = mastery_levels
 
         PlanningService().create_initial_plans(db, student_user_id=student_user_id)
         TaskGenerator().generate_next_7_days(db, student_user_id=student_user_id, today=date.today())

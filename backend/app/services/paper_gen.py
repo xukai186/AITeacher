@@ -6,6 +6,7 @@ import uuid
 from dataclasses import dataclass
 from typing import Literal
 
+import httpx
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -15,6 +16,8 @@ from app.services.model_gateway import ModelGateway, ModelGatewayRequest
 
 CHOICE_KEYS = ("A", "B", "C", "D")
 DEFAULT_QUESTION_COUNT = 10
+LLM_BATCH_SIZE = 3
+PAPER_GEN_TIMEOUT = httpx.Timeout(120.0, connect=10.0)
 PaperPurpose = Literal["self_test", "placement"]
 
 
@@ -31,7 +34,9 @@ class GeneratedQuestion:
 
 class PaperGenService:
     def __init__(self, model_gateway: ModelGateway | None = None) -> None:
-        self._gateway = model_gateway or ModelGateway()
+        self._gateway = model_gateway or ModelGateway(
+            http_client=httpx.Client(timeout=PAPER_GEN_TIMEOUT)
+        )
 
     def generate_for_self_test(
         self,
@@ -101,23 +106,18 @@ class PaperGenService:
                 purpose=purpose,
             )
 
-        try:
-            raw = self._call_llm(
-                policy.provider,
-                policy.model,
-                policy.params or {},
-                subject_code=subject_code,
-                target_nodes=target_nodes,
-                question_count=question_count,
-                purpose=purpose,
-            )
-            parsed = self._parse_llm_questions(
-                raw, target_nodes=target_nodes, question_count=question_count
-            )
-            if parsed:
-                return parsed
-        except Exception:
-            pass
+        batched = self._generate_with_llm_batches(
+            policy.provider,
+            policy.model,
+            policy.params or {},
+            student_user_id=student_user_id,
+            subject_code=subject_code,
+            target_nodes=target_nodes,
+            question_count=question_count,
+            purpose=purpose,
+        )
+        if batched:
+            return batched
 
         return self._deterministic_questions(
             student_user_id,
@@ -126,6 +126,68 @@ class PaperGenService:
             question_count,
             purpose=purpose,
         )
+
+    def _generate_with_llm_batches(
+        self,
+        provider: str,
+        model: str,
+        params: dict,
+        *,
+        student_user_id: uuid.UUID,
+        subject_code: str,
+        target_nodes: list[SyllabusNode],
+        question_count: int,
+        purpose: PaperPurpose,
+    ) -> list[GeneratedQuestion]:
+        out: list[GeneratedQuestion] = []
+        seq = 1
+        while seq <= question_count:
+            batch_count = min(LLM_BATCH_SIZE, question_count - seq + 1)
+            batch_nodes = [
+                target_nodes[(seq - 1 + i) % len(target_nodes)] for i in range(batch_count)
+            ]
+            batch: list[GeneratedQuestion] = []
+            try:
+                raw = self._call_llm(
+                    provider,
+                    model,
+                    params,
+                    subject_code=subject_code,
+                    target_nodes=batch_nodes,
+                    question_count=batch_count,
+                    purpose=purpose,
+                )
+                parsed = self._parse_llm_questions(
+                    raw, target_nodes=batch_nodes, question_count=batch_count
+                )
+                if parsed:
+                    batch = parsed
+            except Exception:
+                batch = []
+
+            if not batch:
+                batch = self._deterministic_questions(
+                    student_user_id,
+                    subject_code,
+                    batch_nodes,
+                    batch_count,
+                    purpose=purpose,
+                )
+
+            for item in batch[:batch_count]:
+                out.append(
+                    GeneratedQuestion(
+                        seq=seq,
+                        knowledge_node_id=item.knowledge_node_id,
+                        q_type=item.q_type,
+                        stem=item.stem,
+                        choices_json=item.choices_json,
+                        answer_key=item.answer_key,
+                        points=item.points,
+                    )
+                )
+                seq += 1
+        return out
 
     @staticmethod
     def _policy(db: Session, org_id: uuid.UUID) -> ModelPolicy | None:

@@ -100,7 +100,10 @@ export default function Placement() {
         ))}
       </div>
 
-      <div className="flex justify-end gap-3 pt-2">
+      <div className="flex justify-end gap-3 pt-2 items-center">
+        {submit.error && (
+          <p className="text-sm text-red-600 mr-auto">提交失败：{(submit.error as Error).message}</p>
+        )}
         <button
           disabled={!canSubmit || submit.isPending}
           className={`px-4 py-2 rounded text-sm ${
@@ -108,7 +111,7 @@ export default function Placement() {
           }`}
           onClick={() => submit.mutate()}
         >
-          提交
+          {submit.isPending ? "提交中…" : "提交"}
         </button>
       </div>
     </div>

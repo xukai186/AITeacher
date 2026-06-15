@@ -68,6 +68,55 @@ def test_student_can_submit_placement_and_get_result(client, db_session):
     assert db_session.query(DailyTask).count() >= 1
 
 
+def test_placement_submit_with_existing_mastery_snapshot(client, db_session):
+    """Orphan mastery snapshot (e.g. after question regen) must not block submit."""
+    student = _seed_student(db_session)
+    token = _token(client)
+    start = client.post(
+        "/student/placement/start",
+        json={"subject_code": "english"},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert start.status_code == 200
+    paper_id = start.json()["subjects"][0]["paper_id"]
+
+    from app.models import MasterySnapshot
+
+    db_session.add(
+        MasterySnapshot(
+            student_user_id=student.id,
+            subject_code="english",
+            version=1,
+            mastery_json={"old": 1},
+        )
+    )
+    db_session.commit()
+
+    questions = (
+        db_session.execute(select(PlacementQuestion).where(PlacementQuestion.paper_id == paper_id))
+        .scalars()
+        .all()
+    )
+    submit = client.post(
+        f"/student/placement/{paper_id}/submit",
+        json={
+            "answers": [
+                {"question_id": str(q.id), "content": q.answer_key}
+                for q in questions
+            ]
+        },
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert submit.status_code == 200
+    snap = db_session.execute(
+        select(MasterySnapshot).where(
+            MasterySnapshot.student_user_id == student.id,
+            MasterySnapshot.subject_code == "english",
+        )
+    ).scalar_one()
+    assert "old" not in snap.mastery_json
+
+
 def test_wrong_book_ingested_after_placement_submit(client, db_session):
     _seed_student(db_session)
     token = _token(client)

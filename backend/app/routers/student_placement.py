@@ -9,6 +9,7 @@ from app.models import User, UserRole
 from app.schemas.placement import (
     PlacementPaperDetail,
     PlacementPaperSummary,
+    PlacementStartIn,
     PlacementStartOut,
     PlacementSubmitIn,
     PlacementSubmitOut,
@@ -20,10 +21,12 @@ router = APIRouter(prefix="/student/placement", tags=["student-placement"])
 
 @router.post("/start", response_model=PlacementStartOut)
 def start_placement(
+    payload: PlacementStartIn | None = None,
     db: Session = Depends(get_db),
     student: User = Depends(require_roles(UserRole.student)),
 ) -> PlacementStartOut:
-    return PlacementService.start(db, student.id)
+    subject_code = payload.subject_code if payload else None
+    return PlacementService.start(db, student.id, subject_code=subject_code)
 
 
 @router.get("", response_model=list[PlacementPaperSummary])

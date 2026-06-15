@@ -46,6 +46,11 @@ function OpenAiParamsHint() {
       <code className="bg-slate-100 px-1 rounded">api_key</code>；也可在服务端设置环境变量{" "}
       <code className="bg-slate-100 px-1 rounded">AIT_LLM_BASE_URL</code>、
       <code className="bg-slate-100 px-1 rounded">AIT_LLM_API_KEY</code>。
+      阿里云 MaaS 示例 base_url：
+      <code className="bg-slate-100 px-1 rounded block mt-1">
+        https://你的实例.cn-beijing.maas.aliyuncs.com/compatible-mode/v1
+      </code>
+      模型名需与控制台一致（如 qwen-plus）。
     </p>
   );
 }
