@@ -39,8 +39,10 @@ class ModelCompletion:
 
 
 class ModelGateway:
+    DEFAULT_TIMEOUT = httpx.Timeout(60.0, connect=10.0)
+
     def __init__(self, http_client: httpx.Client | None = None) -> None:
-        self._http_client = http_client or httpx.Client()
+        self._http_client = http_client or httpx.Client(timeout=self.DEFAULT_TIMEOUT)
 
     def generate(self, req: ModelGatewayRequest) -> ModelGatewayResponse:
         completion = self.complete(
@@ -201,6 +203,19 @@ class ModelGateway:
         digest = hashlib.sha256(f"{model}:{scene}:{last_user}".encode("utf-8")).hexdigest()[:8]
         return ModelCompletion(text=f"[mock:{scene}:{digest}] 收到：{last_user}")
 
+    @staticmethod
+    def _chat_completions_url(base_url: str, params: dict) -> str:
+        base = base_url.rstrip("/")
+        custom = params.get("chat_completions_path")
+        if custom:
+            path = str(custom)
+            if not path.startswith("/"):
+                path = "/" + path
+            return f"{base}{path}"
+        if base.endswith("/v1"):
+            return f"{base}/chat/completions"
+        return f"{base}/v1/chat/completions"
+
     def _complete_openai_compat(
         self,
         *,
@@ -217,14 +232,16 @@ class ModelGateway:
                 "or env vars AIT_LLM_BASE_URL / AIT_LLM_API_KEY"
             )
 
-        url = f"{base_url.rstrip('/')}/v1/chat/completions"
+        url = self._chat_completions_url(base_url, params)
         headers = {"Authorization": f"Bearer {api_key}"}
         payload: dict[str, Any] = {"model": model, "messages": messages}
         if tools:
             payload["tools"] = tools
 
         resp = self._http_client.post(url, headers=headers, json=payload)
-        resp.raise_for_status()
+        if resp.is_error:
+            detail = resp.text[:500]
+            raise RuntimeError(f"LLM HTTP {resp.status_code}: {detail}") from None
         data = resp.json()
         message = data["choices"][0]["message"]
 

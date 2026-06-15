@@ -37,8 +37,11 @@ export type PlacementSubmitOut = {
   mastery_json: Record<string, number>;
 };
 
-export function startPlacement() {
-  return api<PlacementStartOut>("/student/placement/start", { method: "POST" });
+export function startPlacement(body?: { subject_code?: string }) {
+  return api<PlacementStartOut>("/student/placement/start", {
+    method: "POST",
+    body: JSON.stringify(body ?? {}),
+  });
 }
 
 export function listPlacementPapers() {

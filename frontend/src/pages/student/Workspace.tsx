@@ -27,7 +27,10 @@ export default function Workspace() {
   });
 
   const start = useMutation({
-    mutationFn: startPlacement,
+    mutationFn: () => {
+      if (!current) throw new Error("请先选择科目");
+      return startPlacement({ subject_code: current });
+    },
     onSuccess: (out) => {
       const paperId = out.subjects[0]?.paper_id;
       if (paperId) navigate(`/student/placement/${paperId}`);
@@ -58,15 +61,24 @@ export default function Workspace() {
         </header>
 
         <div className="flex justify-between items-center">
-          <div className="text-sm text-slate-600">摸底测评（P3）</div>
+          <div className="text-sm text-slate-600">
+            摸底测评（P3）
+            {current ? ` · ${SUBJECT_LABELS[current] ?? current}` : ""}
+          </div>
           <button
             className="px-3 py-1 rounded text-sm bg-slate-900 text-white disabled:bg-slate-200 disabled:text-slate-500"
-            disabled={start.isPending || data.subject_codes.length === 0}
+            disabled={start.isPending || !current}
             onClick={() => start.mutate()}
           >
-            开始摸底测评
+            {start.isPending ? "生成题目中…" : "开始摸底测评"}
           </button>
         </div>
+        {start.isPending && (
+          <p className="text-sm text-slate-500">AI 正在生成题目，约需 1–3 分钟，请勿重复点击。</p>
+        )}
+        {start.error && (
+          <p className="text-sm text-red-600">{(start.error as Error).message}</p>
+        )}
 
         <div className="flex justify-between items-center">
           <div className="text-sm text-slate-600">自测（P4）</div>

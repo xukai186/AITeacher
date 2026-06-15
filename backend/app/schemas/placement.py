@@ -40,6 +40,10 @@ class PlacementSubjectStatus(BaseModel):
     paper_id: uuid.UUID | None = None
 
 
+class PlacementStartIn(BaseModel):
+    subject_code: str | None = None
+
+
 class PlacementStartOut(BaseModel):
     subjects: list[PlacementSubjectStatus]
 

@@ -54,14 +54,24 @@ class ChatToolLoop:
         final_text = ""
 
         for _ in range(MAX_TOOL_ITERATIONS):
-            completion = self._gateway.complete(
-                provider=provider,
-                model=model,
-                scene="chat",
-                messages=messages,
-                tools=tools if tools else None,
-                params=params,
-            )
+            try:
+                completion = self._gateway.complete(
+                    provider=provider,
+                    model=model,
+                    scene="chat",
+                    messages=messages,
+                    tools=tools if tools else None,
+                    params=params,
+                )
+            except Exception as exc:
+                return ChatTurnResult(
+                    assistant_message=(
+                        "模型调用失败，请检查模型策略中的 base_url、模型名与 api_key。"
+                        f"（{type(exc).__name__}: {exc}）"
+                    ),
+                    tools_used=tools_used,
+                    api_messages=[],
+                )
             if not completion.tool_calls:
                 final_text = completion.text or ""
                 break
@@ -135,6 +145,12 @@ class ChatToolLoop:
         return "\n".join(lines)
 
     @staticmethod
+    def _tool_arguments_json(arguments: Any) -> str:
+        if isinstance(arguments, str):
+            return arguments
+        return json.dumps(arguments or {}, ensure_ascii=False)
+
+    @staticmethod
     def history_from_db_rows(rows: list[Any]) -> list[dict[str, Any]]:
         """Convert persisted ChatMessage rows to provider messages (no system)."""
         out: list[dict[str, Any]] = []
@@ -154,7 +170,9 @@ class ChatToolLoop:
                                     "type": "function",
                                     "function": {
                                         "name": item["name"],
-                                        "arguments": json.dumps(item.get("arguments") or {}),
+                                        "arguments": ChatToolLoop._tool_arguments_json(
+                                            item.get("arguments")
+                                        ),
                                     },
                                 }
                                 for item in payload

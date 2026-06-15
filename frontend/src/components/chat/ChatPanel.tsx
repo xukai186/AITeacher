@@ -14,7 +14,7 @@ export default function ChatPanel({
   const [pending, setPending] = useState(false);
   const [sessionId, setSessionId] = useState<string | null>(null);
 
-  async function handleSend(text: string) {
+    async function handleSend(text: string) {
     if (pending) return;
     setMessages((prev) => [...prev, { role: "user", content: text }]);
     setPending(true);
@@ -32,6 +32,14 @@ export default function ChatPanel({
           content: resp.assistant_message,
           toolsUsed:
             resp.tools_used && resp.tools_used.length > 0 ? resp.tools_used : undefined,
+        },
+      ]);
+    } catch (err) {
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "assistant",
+          content: `请求失败：${(err as Error).message}`,
         },
       ]);
     } finally {

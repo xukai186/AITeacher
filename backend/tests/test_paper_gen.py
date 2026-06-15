@@ -203,7 +203,7 @@ def test_placement_start_uses_paper_gen_policy(db_session):
     )
     db_session.commit()
 
-    PlacementService.start(db_session, student.id)
+    PlacementService.start(db_session, student.id, subject_code="english")
     paper = db_session.execute(select(PlacementPaper)).scalar_one()
     questions = (
         db_session.execute(select(PlacementQuestion).where(PlacementQuestion.paper_id == paper.id))
@@ -212,6 +212,192 @@ def test_placement_start_uses_paper_gen_policy(db_session):
     )
     assert len(questions) == 10
     assert all("摸底" in q.stem for q in questions)
+
+
+def test_placement_start_skips_regeneration_for_existing_llm_questions(db_session):
+    org, student = _seed_student_with_syllabus(db_session)
+    from app.models import PlacementPaper, PlacementQuestion, StudentProfile, StudentSubject
+
+    db_session.add(StudentProfile(user_id=student.id, exam_year=2027))
+    db_session.add(StudentSubject(student_user_id=student.id, subject_code="english", enabled=True))
+    paper = PlacementPaper(student_user_id=student.id, subject_code="english", status="ready")
+    db_session.add(paper)
+    db_session.flush()
+    db_session.add(
+        PlacementQuestion(
+            paper_id=paper.id,
+            seq=1,
+            q_type="single_choice",
+            stem="LLM generated reading comprehension question",
+            choices_json=[{"key": "A", "text": "A"}],
+            answer_key="A",
+            points=1,
+        )
+    )
+    db_session.commit()
+
+    PlacementService.start(db_session, student.id, subject_code="english")
+    questions = (
+        db_session.execute(select(PlacementQuestion).where(PlacementQuestion.paper_id == paper.id))
+        .scalars()
+        .all()
+    )
+    assert len(questions) == 1
+    assert questions[0].stem == "LLM generated reading comprehension question"
+
+
+def test_placement_start_regenerates_unsubmitted_paper(db_session):
+    org, student = _seed_student_with_syllabus(db_session)
+    from app.models import PlacementPaper, PlacementQuestion, StudentProfile, StudentSubject
+
+    db_session.add(StudentProfile(user_id=student.id, exam_year=2027))
+    db_session.add(StudentSubject(student_user_id=student.id, subject_code="english", enabled=True))
+    paper = PlacementPaper(student_user_id=student.id, subject_code="english", status="ready")
+    db_session.add(paper)
+    db_session.flush()
+    db_session.add(
+        PlacementQuestion(
+            paper_id=paper.id,
+            seq=1,
+            q_type="single_choice",
+            stem="【写作】请选择最符合考纲要求的选项（第1题）",
+            choices_json=[{"key": "A", "text": "A"}],
+            answer_key="A",
+            points=1,
+        )
+    )
+    db_session.add(
+        ModelPolicy(
+            org_id=org.id,
+            scene="paper_gen",
+            provider="mock",
+            model="mock-v1",
+            params={},
+        )
+    )
+    db_session.commit()
+
+    PlacementService.start(db_session, student.id, subject_code="english")
+    questions = (
+        db_session.execute(select(PlacementQuestion).where(PlacementQuestion.paper_id == paper.id))
+        .scalars()
+        .all()
+    )
+    assert len(questions) == 10
+    assert all("摸底" in q.stem for q in questions)
+
+
+def test_placement_start_keeps_submitted_paper(db_session):
+    org, student = _seed_student_with_syllabus(db_session)
+    from app.models import (
+        PlacementPaper,
+        PlacementQuestion,
+        PlacementSubmission,
+        StudentProfile,
+        StudentSubject,
+    )
+
+    db_session.add(StudentProfile(user_id=student.id, exam_year=2027))
+    db_session.add(StudentSubject(student_user_id=student.id, subject_code="english", enabled=True))
+    paper = PlacementPaper(student_user_id=student.id, subject_code="english", status="ready")
+    db_session.add(paper)
+    db_session.flush()
+    db_session.add(
+        PlacementQuestion(
+            paper_id=paper.id,
+            seq=1,
+            q_type="single_choice",
+            stem="【写作】旧题保留",
+            choices_json=[{"key": "A", "text": "A"}],
+            answer_key="A",
+            points=1,
+        )
+    )
+    db_session.add(
+        PlacementSubmission(
+            paper_id=paper.id,
+            student_user_id=student.id,
+            status="submitted",
+        )
+    )
+    db_session.add(
+        ModelPolicy(
+            org_id=org.id,
+            scene="paper_gen",
+            provider="mock",
+            model="mock-v1",
+            params={},
+        )
+    )
+    db_session.commit()
+
+    PlacementService.start(db_session, student.id, subject_code="english")
+    questions = (
+        db_session.execute(select(PlacementQuestion).where(PlacementQuestion.paper_id == paper.id))
+        .scalars()
+        .all()
+    )
+    assert len(questions) == 1
+    assert questions[0].stem == "【写作】旧题保留"
+
+
+def test_paper_gen_llm_batches_large_paper(db_session):
+    import re
+
+    from app.services.model_gateway import ModelGateway, ModelGatewayRequest, ModelGatewayResponse
+
+    org, student = _seed_student_with_syllabus(db_session)
+    node = db_session.execute(
+        select(SyllabusNode).where(SyllabusNode.subject_code == "english").limit(1)
+    ).scalar_one()
+    db_session.add(
+        ModelPolicy(
+            org_id=org.id,
+            scene="paper_gen",
+            provider="openai_compat",
+            model="gpt-test",
+            params={"base_url": "https://example.invalid", "api_key": "k"},
+        )
+    )
+    db_session.commit()
+
+    class BatchGateway(ModelGateway):
+        def __init__(self) -> None:
+            super().__init__()
+            self.calls = 0
+
+        def generate(self, req: ModelGatewayRequest) -> ModelGatewayResponse:
+            self.calls += 1
+            match = re.search(r"需要题目数量：(\d+)", req.prompt)
+            count = int(match.group(1)) if match else 5
+            payload = {
+                "questions": [
+                    {
+                        "seq": i,
+                        "knowledge_node_id": str(node.id),
+                        "q_type": "single_choice",
+                        "stem": f"LLM 题 {i}",
+                        "choices": [{"key": k, "text": k} for k in ("A", "B", "C", "D")],
+                        "answer_key": "A",
+                        "points": 1,
+                    }
+                    for i in range(1, count + 1)
+                ]
+            }
+            return ModelGatewayResponse(text=json.dumps(payload, ensure_ascii=False))
+
+    gateway = BatchGateway()
+    svc = PaperGenService(model_gateway=gateway)
+    questions = svc.generate_for_placement(
+        db_session,
+        org_id=org.id,
+        student_user_id=student.id,
+        subject_code="english",
+        question_count=10,
+    )
+    assert gateway.calls == 4
+    assert len(questions) == 10
+    assert all("LLM 题" in q.stem for q in questions)
 
 
 def test_self_test_generate_uses_paper_gen_policy(db_session):
