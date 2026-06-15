@@ -12,7 +12,9 @@ from app.models import (
     WrongBookItem,
 )
 from app.seed_syllabus import seed_minimal_syllabus
+from app.models import PlacementPaper, PlacementQuestion, StudentSubject
 from app.services.paper_gen import PaperGenService
+from app.services.placement import PlacementService
 from app.services.self_test import SelfTestService
 from tests.factories import make_org, make_user
 
@@ -157,6 +159,59 @@ def test_paper_gen_falls_back_when_llm_json_invalid(db_session, monkeypatch):
 
     assert len(questions) == 5
     assert all(q.q_type == "single_choice" for q in questions)
+
+
+def test_paper_gen_placement_mock_uses_placement_stem(db_session):
+    org, student = _seed_student_with_syllabus(db_session)
+    db_session.add(
+        ModelPolicy(
+            org_id=org.id,
+            scene="paper_gen",
+            provider="mock",
+            model="mock-v1",
+            params={},
+        )
+    )
+    db_session.commit()
+
+    questions = PaperGenService().generate_for_placement(
+        db_session,
+        org_id=org.id,
+        student_user_id=student.id,
+        subject_code="english",
+        question_count=3,
+    )
+
+    assert len(questions) == 3
+    assert all("摸底" in q.stem for q in questions)
+
+
+def test_placement_start_uses_paper_gen_policy(db_session):
+    org, student = _seed_student_with_syllabus(db_session)
+    from app.models import StudentProfile
+
+    db_session.add(StudentProfile(user_id=student.id, exam_year=2027))
+    db_session.add(StudentSubject(student_user_id=student.id, subject_code="english", enabled=True))
+    db_session.add(
+        ModelPolicy(
+            org_id=org.id,
+            scene="paper_gen",
+            provider="mock",
+            model="mock-v1",
+            params={},
+        )
+    )
+    db_session.commit()
+
+    PlacementService.start(db_session, student.id)
+    paper = db_session.execute(select(PlacementPaper)).scalar_one()
+    questions = (
+        db_session.execute(select(PlacementQuestion).where(PlacementQuestion.paper_id == paper.id))
+        .scalars()
+        .all()
+    )
+    assert len(questions) == 10
+    assert all("摸底" in q.stem for q in questions)
 
 
 def test_self_test_generate_uses_paper_gen_policy(db_session):
