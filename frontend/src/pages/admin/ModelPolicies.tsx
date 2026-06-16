@@ -23,6 +23,12 @@ const SCENE_CONFIG: Record<
     defaultModel: "gpt-4.1-mini",
     saveLabel: "保存 paper_gen 策略",
   },
+  grading: {
+    title: "批改场景（grading）",
+    description: "自测卷主观题 AI 批改与评语；客观题仍按标准答案判分。未配置时使用 mock。",
+    defaultModel: "gpt-4.1-mini",
+    saveLabel: "保存 grading 策略",
+  },
 };
 
 function paramsToText(params: Record<string, unknown>): string {
@@ -219,6 +225,11 @@ export default function ModelPolicies() {
         policy={data?.find((p) => p.scene === "paper_gen")}
         isLoading={isLoading}
       />
+      <ScenePolicyForm
+        scene="grading"
+        policy={data?.find((p) => p.scene === "grading")}
+        isLoading={isLoading}
+      />
 
       {otherPolicies.length > 0 && (
         <section className="bg-white shadow rounded">
@@ -242,7 +253,7 @@ export default function ModelPolicies() {
             </tbody>
           </table>
           <p className="px-4 py-2 text-xs text-slate-500">
-            grading 等场景请通过 API 配置，或等待后续页面支持。
+            以上场景之外的历史策略，仅展示不可在此页编辑。
           </p>
         </section>
       )}
