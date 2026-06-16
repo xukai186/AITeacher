@@ -1,12 +1,12 @@
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { useNavigate } from "react-router-dom";
 import { fetchStudentMe } from "@/api/me";
 import { startPlacement } from "@/api/placement";
 import { fetchTodayTasks } from "@/api/tasks";
 import { generateSelfTest } from "@/api/selfTests";
 import ChatPanel from "@/components/chat/ChatPanel";
-import { useMutation } from "@tanstack/react-query";
-import { useNavigate } from "react-router-dom";
+import { usePaperGenProgress } from "@/hooks/usePaperGenProgress";
 
 const SUBJECT_LABELS: Record<string, string> = {
   politics: "政治",
@@ -26,10 +26,16 @@ export default function Workspace() {
     queryFn: fetchTodayTasks,
   });
 
+  const paperGen = usePaperGenProgress();
+
   const start = useMutation({
-    mutationFn: () => {
+    mutationFn: async () => {
       if (!current) throw new Error("请先选择科目");
-      return startPlacement({ subject_code: current });
+      const out = await startPlacement({ subject_code: current });
+      if (out.gen_job_id) {
+        await paperGen.run(out.gen_job_id);
+      }
+      return out;
     },
     onSuccess: (out) => {
       const paperId = out.subjects[0]?.paper_id;
@@ -40,8 +46,17 @@ export default function Workspace() {
   const [selfTestOpen, setSelfTestOpen] = useState(false);
   const [selfTestSubject, setSelfTestSubject] = useState<string>("");
   const genSelfTest = useMutation({
-    mutationFn: async () => generateSelfTest({ subject_code: selfTestSubject }),
-    onSuccess: (p) => navigate(`/student/self-tests/${p.id}`),
+    mutationFn: async () => {
+      const paper = await generateSelfTest({ subject_code: selfTestSubject });
+      if (paper.gen_job_id) {
+        await paperGen.run(paper.gen_job_id);
+      }
+      return paper;
+    },
+    onSuccess: (p) => {
+      setSelfTestOpen(false);
+      navigate(`/student/self-tests/${p.id}`);
+    },
   });
 
   const [activeSubject, setActiveSubject] = useState<string | null>(null);
@@ -51,6 +66,7 @@ export default function Workspace() {
   if (!data) return null;
 
   const current = activeSubject ?? data.subject_codes[0] ?? null;
+  const paperGenBusy = start.isPending || genSelfTest.isPending || paperGen.running;
 
   return (
     <div className="grid grid-cols-12 gap-4 h-full">
@@ -67,17 +83,29 @@ export default function Workspace() {
           </div>
           <button
             className="px-3 py-1 rounded text-sm bg-slate-900 text-white disabled:bg-slate-200 disabled:text-slate-500"
-            disabled={start.isPending || !current}
+            disabled={paperGenBusy || !current}
             onClick={() => start.mutate()}
           >
-            {start.isPending ? "生成题目中…" : "开始摸底测评"}
+            {paperGenBusy ? "生成题目中…" : "开始摸底测评"}
           </button>
         </div>
-        {start.isPending && (
-          <p className="text-sm text-slate-500">AI 正在生成题目，约需 1–3 分钟，请勿重复点击。</p>
+        {paperGenBusy && (
+          <div className="text-sm text-slate-600 space-y-2">
+            <p>{paperGen.message ?? "AI 正在生成题目，请勿重复点击。"}</p>
+            {paperGen.progressPct !== null && (
+              <div className="h-2 bg-slate-100 rounded overflow-hidden">
+                <div
+                  className="h-full bg-slate-900 transition-all duration-500"
+                  style={{ width: `${paperGen.progressPct}%` }}
+                />
+              </div>
+            )}
+          </div>
         )}
-        {start.error && (
-          <p className="text-sm text-red-600">{(start.error as Error).message}</p>
+        {(start.error || paperGen.error) && (
+          <p className="text-sm text-red-600">
+            {((start.error || paperGen.error) as Error).message}
+          </p>
         )}
 
         <div className="flex justify-between items-center">
@@ -118,10 +146,10 @@ export default function Workspace() {
                 </button>
                 <button
                   className="px-3 py-1 rounded text-sm bg-slate-900 text-white disabled:bg-slate-200 disabled:text-slate-500"
-                  disabled={!selfTestSubject || genSelfTest.isPending}
+                  disabled={!selfTestSubject || paperGenBusy}
                   onClick={() => genSelfTest.mutate()}
                 >
-                  生成并开始
+                  {paperGenBusy ? "生成中…" : "生成并开始"}
                 </button>
               </div>
             </div>

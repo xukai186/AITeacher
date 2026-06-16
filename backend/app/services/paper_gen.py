@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Literal
 
@@ -19,6 +20,7 @@ DEFAULT_QUESTION_COUNT = 10
 LLM_BATCH_SIZE = 3
 PAPER_GEN_TIMEOUT = httpx.Timeout(120.0, connect=10.0)
 PaperPurpose = Literal["self_test", "placement"]
+ProgressCallback = Callable[[int, int, str], None]
 
 
 @dataclass(frozen=True)
@@ -46,6 +48,7 @@ class PaperGenService:
         student_user_id: uuid.UUID,
         subject_code: str,
         question_count: int = DEFAULT_QUESTION_COUNT,
+        on_progress: ProgressCallback | None = None,
     ) -> list[GeneratedQuestion]:
         return self.generate(
             db,
@@ -54,6 +57,7 @@ class PaperGenService:
             subject_code=subject_code,
             question_count=question_count,
             purpose="self_test",
+            on_progress=on_progress,
         )
 
     def generate_for_placement(
@@ -64,6 +68,7 @@ class PaperGenService:
         student_user_id: uuid.UUID,
         subject_code: str,
         question_count: int = DEFAULT_QUESTION_COUNT,
+        on_progress: ProgressCallback | None = None,
     ) -> list[GeneratedQuestion]:
         return self.generate(
             db,
@@ -72,6 +77,7 @@ class PaperGenService:
             subject_code=subject_code,
             question_count=question_count,
             purpose="placement",
+            on_progress=on_progress,
         )
 
     def generate(
@@ -83,6 +89,7 @@ class PaperGenService:
         subject_code: str,
         question_count: int = DEFAULT_QUESTION_COUNT,
         purpose: PaperPurpose = "self_test",
+        on_progress: ProgressCallback | None = None,
     ) -> list[GeneratedQuestion]:
         policy = self._policy(db, org_id)
         overview = ReportService.overview(
@@ -98,13 +105,16 @@ class PaperGenService:
         )
 
         if policy is None or policy.provider == "mock":
-            return self._mock_questions(
+            out = self._mock_questions(
                 student_user_id,
                 subject_code,
                 target_nodes,
                 question_count,
                 purpose=purpose,
             )
+            if on_progress:
+                on_progress(len(out), question_count, f"已生成 {len(out)}/{question_count} 题")
+            return out
 
         batched = self._generate_with_llm_batches(
             policy.provider,
@@ -115,17 +125,21 @@ class PaperGenService:
             target_nodes=target_nodes,
             question_count=question_count,
             purpose=purpose,
+            on_progress=on_progress,
         )
         if batched:
             return batched
 
-        return self._deterministic_questions(
+        out = self._deterministic_questions(
             student_user_id,
             subject_code,
             target_nodes,
             question_count,
             purpose=purpose,
         )
+        if on_progress:
+            on_progress(len(out), question_count, f"已生成 {len(out)}/{question_count} 题")
+        return out
 
     def _generate_with_llm_batches(
         self,
@@ -138,6 +152,7 @@ class PaperGenService:
         target_nodes: list[SyllabusNode],
         question_count: int,
         purpose: PaperPurpose,
+        on_progress: ProgressCallback | None = None,
     ) -> list[GeneratedQuestion]:
         out: list[GeneratedQuestion] = []
         seq = 1
@@ -187,6 +202,8 @@ class PaperGenService:
                     )
                 )
                 seq += 1
+            if on_progress:
+                on_progress(min(seq - 1, question_count), question_count, f"已生成 {min(seq - 1, question_count)}/{question_count} 题")
         return out
 
     @staticmethod

@@ -20,6 +20,7 @@ from app.services.self_test import SelfTestService
 from app.services.self_test_eligibility import SelfTestEligibilityService
 from app.services.wrong_book_followup import WrongBookFollowUpService
 from tests.factories import make_org, make_user
+from tests.paper_gen_job_helpers import finish_paper_gen_jobs, generate_self_test_and_wait
 
 
 def _student_with_placement(db_session):
@@ -58,11 +59,8 @@ def test_self_test_submit_updates_mastery_and_schedules_review_tasks(client, db_
         db_session, student_user_id=student.id, subject_code="english"
     ).allowed
 
-    paper_id = client.post(
-        "/student/self-tests/generate",
-        json={"subject_code": "english"},
-        headers=headers,
-    ).json()["id"]
+    gen = generate_self_test_and_wait(client, token, db_session=db_session)
+    paper_id = gen["id"]
     paper = client.get(f"/student/self-tests/{paper_id}", headers=headers).json()
     answers = [{"question_id": q["id"], "content": "Z"} for q in paper["questions"]]
     client.post(
@@ -95,7 +93,9 @@ def test_self_test_submit_updates_mastery_and_schedules_review_tasks(client, db_
 
 def test_generate_paper_tool_respects_eligibility(db_session):
     student = _student_with_placement(db_session)
-    SelfTestService.generate(db_session, student.id, "english")
+    paper, _ = SelfTestService.generate(db_session, student.id, "english")
+    finish_paper_gen_jobs(db_session)
+    db_session.commit()
     out = default_tool_registry.call(
         db_session,
         "generate_paper",

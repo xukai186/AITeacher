@@ -1,6 +1,6 @@
 import uuid
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, BackgroundTasks, Depends
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -9,6 +9,7 @@ from app.database import get_db
 from app.models import SelfTestQuestion, User, UserRole
 from app.schemas.self_test import (
     SelfTestGenerateIn,
+    SelfTestGenerateOut,
     SelfTestGradeOut,
     SelfTestPaperDetailOut,
     SelfTestPaperSummaryOut,
@@ -17,18 +18,28 @@ from app.schemas.self_test import (
     SelfTestSubmitOut,
 )
 from app.services.self_test import SelfTestService
+from app.services.paper_gen_jobs import kick_paper_gen_job
 
 router = APIRouter(prefix="/student/self-tests", tags=["student-self-tests"])
 
 
-@router.post("/generate", response_model=SelfTestPaperSummaryOut)
+@router.post("/generate", response_model=SelfTestGenerateOut)
 def generate_self_test(
     payload: SelfTestGenerateIn,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     student: User = Depends(require_roles(UserRole.student)),
-) -> SelfTestPaperSummaryOut:
-    paper = SelfTestService.generate(db, student.id, payload.subject_code)
-    return SelfTestPaperSummaryOut.model_validate(paper)
+) -> SelfTestGenerateOut:
+    paper, gen_job_id = SelfTestService.generate(db, student.id, payload.subject_code)
+    if gen_job_id is not None:
+        background_tasks.add_task(kick_paper_gen_job, gen_job_id)
+    return SelfTestGenerateOut(
+        id=paper.id,
+        subject_code=paper.subject_code,
+        status=paper.status,
+        created_at=paper.created_at,
+        gen_job_id=gen_job_id,
+    )
 
 
 @router.get("", response_model=list[SelfTestPaperSummaryOut])

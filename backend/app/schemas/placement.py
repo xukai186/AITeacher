@@ -46,6 +46,7 @@ class PlacementStartIn(BaseModel):
 
 class PlacementStartOut(BaseModel):
     subjects: list[PlacementSubjectStatus]
+    gen_job_id: uuid.UUID | None = None
 
 
 class PlacementAnswerIn(BaseModel):

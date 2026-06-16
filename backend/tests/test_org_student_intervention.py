@@ -15,6 +15,7 @@ from app.models import (
 from app.services.planning import PlanningService
 from app.services.self_test import SelfTestService
 from tests.factories import make_org, make_user
+from tests.paper_gen_job_helpers import finish_paper_gen_jobs
 
 
 def _login(client, email, password):
@@ -103,7 +104,8 @@ def test_staff_cannot_access_unassigned_student(client, db_session):
 
 def test_lock_and_replace_paper(client, db_session):
     _, admin, _, student = _seed_student_with_plan(db_session)
-    paper = SelfTestService.generate(db_session, student.id, "english")
+    paper, _ = SelfTestService.generate(db_session, student.id, "english")
+    finish_paper_gen_jobs(db_session)
     db_session.commit()
 
     token = _login(client, "admin@demo.example", "pw")

@@ -3,6 +3,7 @@ from sqlalchemy import select
 from app.auth.security import hash_password
 from app.models import ModelPolicy, SelfTestGrade, SelfTestPaper, SelfTestQuestion, SelfTestSubmission, StudentProfile, StudentSubject, UserRole
 from tests.factories import make_org, make_user
+from tests.paper_gen_job_helpers import finish_paper_gen_jobs, generate_self_test_and_wait
 
 
 def _seed_student(db):
@@ -30,12 +31,7 @@ def test_student_can_generate_list_and_get_self_test_paper(client, db_session):
     _seed_student(db_session)
     token = _token(client)
 
-    gen = client.post(
-        "/student/self-tests/generate",
-        json={"subject_code": "english"},
-        headers={"Authorization": f"Bearer {token}"},
-    )
-    assert gen.status_code == 200
+    gen = generate_self_test_and_wait(client, token, db_session=db_session)
 
     papers = client.get("/student/self-tests", headers={"Authorization": f"Bearer {token}"})
     assert papers.status_code == 200
@@ -59,13 +55,8 @@ def test_student_can_submit_self_test_and_get_grade(client, db_session):
     _seed_student(db_session)
     token = _token(client)
 
-    gen = client.post(
-        "/student/self-tests/generate",
-        json={"subject_code": "english"},
-        headers={"Authorization": f"Bearer {token}"},
-    )
-    assert gen.status_code == 200
-    paper_id = gen.json()["id"]
+    gen = generate_self_test_and_wait(client, token, db_session=db_session)
+    paper_id = gen["id"]
 
     paper = client.get(
         f"/student/self-tests/{paper_id}",
@@ -122,13 +113,8 @@ def test_student_can_submit_subjective_self_test_question(client, db_session, mo
 
     monkeypatch.setattr(mg.ModelGateway, "generate", fake_generate, raising=True)
 
-    gen = client.post(
-        "/student/self-tests/generate",
-        json={"subject_code": "english"},
-        headers={"Authorization": f"Bearer {token}"},
-    )
-    assert gen.status_code == 200
-    paper_id = gen.json()["id"]
+    gen = generate_self_test_and_wait(client, token, db_session=db_session)
+    paper_id = gen["id"]
 
     # flip first question to subjective for this test
     q = db_session.execute(select(SelfTestQuestion).limit(1)).scalar_one()
