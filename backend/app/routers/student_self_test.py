@@ -67,11 +67,21 @@ def get_self_test(
         .scalars()
         .all()
     )
+    gen_job_id = None
+    if paper.status == "generating":
+        from app.services.paper_gen_jobs import PaperGenJobService
+
+        active = PaperGenJobService().get_active_for_paper(
+            db, paper_id=paper.id, purpose="self_test"
+        )
+        if active is not None:
+            gen_job_id = active.id
     return SelfTestPaperDetailOut(
         id=paper.id,
         subject_code=paper.subject_code,
         status=paper.status,
         created_at=paper.created_at,
+        gen_job_id=gen_job_id,
         questions=[
             SelfTestQuestionOut(
                 id=q.id,

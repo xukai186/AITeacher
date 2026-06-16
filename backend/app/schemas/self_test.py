@@ -39,6 +39,7 @@ class SelfTestQuestionOut(BaseModel):
 
 class SelfTestPaperDetailOut(SelfTestPaperSummaryOut):
     questions: list[SelfTestQuestionOut]
+    gen_job_id: uuid.UUID | None = None
 
 
 class SelfTestAnswerIn(BaseModel):

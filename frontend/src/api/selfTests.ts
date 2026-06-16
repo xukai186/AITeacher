@@ -22,6 +22,7 @@ export type SelfTestQuestionOut = {
 
 export type SelfTestPaperDetailOut = SelfTestPaperSummaryOut & {
   questions: SelfTestQuestionOut[];
+  gen_job_id?: string | null;
 };
 
 export type SelfTestSubmitIn = {

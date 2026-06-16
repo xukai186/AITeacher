@@ -1,7 +1,9 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useNavigate, useParams } from "react-router-dom";
+import PaperGeneratingView from "@/components/PaperGeneratingView";
 import { getSelfTestPaper, submitSelfTest, type SelfTestQuestionOut } from "@/api/selfTests";
+import { useWaitForPaperGeneration } from "@/hooks/useWaitForPaperGeneration";
 
 type AnswersState = Record<string, string>;
 
@@ -21,6 +23,8 @@ export default function SelfTestPaper() {
     queryFn: () => getSelfTestPaper(id),
     enabled: Boolean(id),
   });
+
+  const generation = useWaitForPaperGeneration(paper.data, paper.refetch);
 
   const questions = paper.data?.questions ?? [];
   const [answers, setAnswers] = useState<AnswersState>({});
@@ -44,6 +48,28 @@ export default function SelfTestPaper() {
   if (paper.isLoading) return <p className="text-slate-500">加载中…</p>;
   if (paper.error) return <p className="text-red-600">{(paper.error as Error).message}</p>;
   if (!paper.data) return null;
+
+  if (paper.data.status === "failed") {
+    return (
+      <PaperGeneratingView
+        title="自测做题"
+        error={new Error("试卷生成失败，请返回列表重新生成")}
+        onBack={() => navigate("/student/self-tests")}
+      />
+    );
+  }
+
+  if (generation.waiting || paper.data.status === "generating") {
+    return (
+      <PaperGeneratingView
+        title="自测做题"
+        message={generation.message}
+        progressPct={generation.progressPct}
+        error={generation.error}
+        onBack={() => navigate("/student/self-tests")}
+      />
+    );
+  }
 
   if (Object.keys(answers).length === 0 && questions.length > 0) {
     queueMicrotask(() => setAnswers(initAnswers(questions)));
@@ -98,4 +124,3 @@ export default function SelfTestPaper() {
     </div>
   );
 }
-

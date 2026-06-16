@@ -5,6 +5,7 @@ import uuid
 from datetime import date
 from typing import Any
 
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.services.agent_context import SubjectContext, get_subject_context
@@ -117,10 +118,9 @@ class ChatToolExecutor:
             )
             if not eligibility.allowed:
                 return {"ok": False, "reasons": eligibility.reasons}
-            from app.services.self_test import SelfTestService
-            from app.services.paper_gen_jobs import run_paper_gen_job_if_needed
-            from sqlalchemy import func, select
             from app.models import SelfTestQuestion
+            from app.services.paper_gen_jobs import run_paper_gen_job_if_needed
+            from app.services.self_test import SelfTestService
 
             paper, gen_job_id = SelfTestService.generate(db, student_user_id, subject_code)
             run_paper_gen_job_if_needed(db, gen_job_id)
@@ -136,6 +136,142 @@ class ChatToolExecutor:
                 "status": paper.status,
                 "question_count": int(q_count),
             }
+
+        if tool_name == "list_papers":
+            if agent_type != "subject":
+                return {"error": "list_papers is only available for subject agent"}
+            subject_code = default_subject_code
+            if not subject_code:
+                return {"error": "subject_code is required"}
+
+            raw_limit = arguments.get("limit")
+            limit = int(raw_limit) if raw_limit is not None else 5
+            limit = max(1, min(limit, 20))
+
+            from app.models import PlacementPaper, SelfTestPaper
+
+            placements = (
+                db.execute(
+                    select(PlacementPaper)
+                    .where(
+                        PlacementPaper.student_user_id == student_user_id,
+                        PlacementPaper.subject_code == subject_code,
+                    )
+                    .order_by(PlacementPaper.created_at.desc())
+                    .limit(limit)
+                )
+                .scalars()
+                .all()
+            )
+            self_tests = (
+                db.execute(
+                    select(SelfTestPaper)
+                    .where(
+                        SelfTestPaper.student_user_id == student_user_id,
+                        SelfTestPaper.subject_code == subject_code,
+                    )
+                    .order_by(SelfTestPaper.created_at.desc())
+                    .limit(limit)
+                )
+                .scalars()
+                .all()
+            )
+            return {
+                "subject_code": subject_code,
+                "placement_papers": [
+                    {"paper_id": str(p.id), "status": p.status, "created_at": p.created_at.isoformat()}
+                    for p in placements
+                ],
+                "self_test_papers": [
+                    {"paper_id": str(p.id), "status": p.status, "created_at": p.created_at.isoformat()}
+                    for p in self_tests
+                ],
+            }
+
+        if tool_name == "get_paper":
+            if agent_type != "subject":
+                return {"error": "get_paper is only available for subject agent"}
+            subject_code = default_subject_code
+            if not subject_code:
+                return {"error": "subject_code is required"}
+
+            paper_type = arguments.get("paper_type")
+            paper_id_raw = arguments.get("paper_id")
+            if not paper_type or not paper_id_raw:
+                return {"error": "paper_type and paper_id are required"}
+
+            try:
+                paper_id = uuid.UUID(str(paper_id_raw))
+            except Exception:
+                return {"error": "invalid paper_id"}
+
+            from app.models import (
+                PlacementPaper,
+                PlacementQuestion,
+                SelfTestPaper,
+                SelfTestQuestion,
+            )
+
+            if paper_type == "placement":
+                paper = db.get(PlacementPaper, paper_id)
+                if paper is None or paper.student_user_id != student_user_id or paper.subject_code != subject_code:
+                    return {"error": "paper not found"}
+                qs = (
+                    db.execute(
+                        select(PlacementQuestion)
+                        .where(PlacementQuestion.paper_id == paper_id)
+                        .order_by(PlacementQuestion.seq)
+                    )
+                    .scalars()
+                    .all()
+                )
+                return {
+                    "paper_type": "placement",
+                    "paper_id": str(paper.id),
+                    "status": paper.status,
+                    "subject_code": paper.subject_code,
+                    "questions": [
+                        {
+                            "seq": q.seq,
+                            "q_type": q.q_type,
+                            "stem": q.stem,
+                            "choices": q.choices_json or [],
+                        }
+                        for q in qs
+                    ],
+                }
+
+            if paper_type == "self_test":
+                paper = db.get(SelfTestPaper, paper_id)
+                if paper is None or paper.student_user_id != student_user_id or paper.subject_code != subject_code:
+                    return {"error": "paper not found"}
+                qs = (
+                    db.execute(
+                        select(SelfTestQuestion)
+                        .where(SelfTestQuestion.paper_id == paper_id)
+                        .order_by(SelfTestQuestion.seq)
+                    )
+                    .scalars()
+                    .all()
+                )
+                return {
+                    "paper_type": "self_test",
+                    "paper_id": str(paper.id),
+                    "status": paper.status,
+                    "subject_code": paper.subject_code,
+                    "questions": [
+                        {
+                            "seq": q.seq,
+                            "q_type": q.q_type,
+                            "stem": q.stem,
+                            "choices": q.choices_json or [],
+                            "points": q.points,
+                        }
+                        for q in qs
+                    ],
+                }
+
+            return {"error": "unsupported paper_type"}
 
         return {"error": f"unknown tool: {tool_name}"}
 
