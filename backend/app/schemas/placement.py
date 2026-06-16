@@ -32,6 +32,7 @@ class PlacementPaperSummary(BaseModel):
 
 class PlacementPaperDetail(PlacementPaperSummary):
     questions: list[PlacementQuestionOut]
+    gen_job_id: uuid.UUID | None = None
 
 
 class PlacementSubjectStatus(BaseModel):

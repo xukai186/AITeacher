@@ -80,3 +80,17 @@ def test_paper_gen_job_get_endpoint_runs_pending(client, db_session):
     body = resp.json()
     assert body["status"] == "succeeded"
     assert body["progress"]["done"] == 10
+
+
+def test_placement_get_paper_includes_gen_job_id_while_generating(db_session):
+    student = _seed_student(db_session)
+
+    out = PlacementService.start(db_session, student.id, subject_code="english")
+    assert out.gen_job_id is not None
+
+    paper = PlacementService.get_paper(
+        db_session, student.id, out.subjects[0].paper_id
+    )
+    assert paper.status == "generating"
+    assert paper.gen_job_id == out.gen_job_id
+    assert paper.questions == []

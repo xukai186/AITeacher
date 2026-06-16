@@ -67,6 +67,61 @@ beforeEach(() => {
 });
 
 describe("Placement page", () => {
+  it("shows generating progress when paper is not ready", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: any, init?: any) => {
+        const url = String(input);
+        if (url.includes("/api/student/placement/p1") && (!init?.method || init.method === "GET")) {
+          return new Response(
+            JSON.stringify({
+              id: "p1",
+              subject_code: "english",
+              status: "generating",
+              title: "english",
+              created_at: "2026-05-28T00:00:00Z",
+              gen_job_id: "job-1",
+              questions: [],
+            }),
+            { status: 200 },
+          );
+        }
+        if (url.includes("/api/student/paper-gen-jobs/job-1")) {
+          return new Response(
+            JSON.stringify({
+              id: "job-1",
+              status: "succeeded",
+              purpose: "placement",
+              subject_code: "english",
+              paper_id: "p1",
+              attempts: 1,
+              last_error: null,
+              progress: { done: 10, total: 10, message: "题目生成完成" },
+              result_json: { paper_id: "p1" },
+              created_at: "2026-05-28T00:00:00Z",
+              updated_at: "2026-05-28T00:00:00Z",
+            }),
+            { status: 200 },
+          );
+        }
+        return new Response(JSON.stringify({ detail: "not found" }), { status: 404 });
+      }),
+    );
+
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={qc}>
+        <MemoryRouter initialEntries={["/student/placement/p1"]}>
+          <Routes>
+            <Route path="/student/placement/:paperId" element={<Placement />} />
+          </Routes>
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+
+    await waitFor(() => expect(screen.getByText(/正在生成题目/)).toBeTruthy());
+  });
+
   it("fills correct answers and submits", async () => {
     mockFetchPlacement();
     renderPlacement();
