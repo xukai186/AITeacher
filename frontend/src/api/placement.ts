@@ -26,6 +26,7 @@ export type PlacementQuestionOut = {
 
 export type PlacementPaperDetail = PlacementPaperSummary & {
   questions: PlacementQuestionOut[];
+  gen_job_id?: string | null;
 };
 
 export type PlacementSubmitIn = {

@@ -19,6 +19,7 @@ from app.schemas.self_test import (
 )
 from app.services.self_test import SelfTestService
 from app.services.paper_gen_jobs import kick_paper_gen_job
+from app.services.paper_gen_jobs import PaperGenJobService
 
 router = APIRouter(prefix="/student/self-tests", tags=["student-self-tests"])
 
@@ -58,6 +59,7 @@ def get_self_test(
     student: User = Depends(require_roles(UserRole.student)),
 ) -> SelfTestPaperDetailOut:
     paper = SelfTestService.get_paper(db, student.id, paper_id)
+    active = PaperGenJobService().get_active_for_paper(db, paper_id=paper.id, purpose="self_test")
     questions = (
         db.execute(
             select(SelfTestQuestion)
@@ -72,6 +74,7 @@ def get_self_test(
         subject_code=paper.subject_code,
         status=paper.status,
         created_at=paper.created_at,
+        gen_job_id=active.id if active is not None else None,
         questions=[
             SelfTestQuestionOut(
                 id=q.id,

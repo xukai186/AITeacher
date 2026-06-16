@@ -1,11 +1,12 @@
-import { useMemo, useState } from "react";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useEffect, useMemo, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useParams } from "react-router-dom";
 import {
   getPlacementPaper,
   submitPlacement,
   type PlacementQuestionOut,
 } from "@/api/placement";
+import { usePaperGenProgress } from "@/hooks/usePaperGenProgress";
 
 type AnswersState = Record<string, string>;
 
@@ -19,6 +20,10 @@ export default function Placement() {
   const navigate = useNavigate();
   const { paperId } = useParams();
   const id = paperId ?? "";
+  const qc = useQueryClient();
+  const paperGen = usePaperGenProgress();
+  const { run: runPaperGen, running: paperGenRunning } = paperGen;
+  const [ranJobId, setRanJobId] = useState<string | null>(null);
 
   const paper = useQuery({
     queryKey: ["student", "placement", "paper", id],
@@ -43,6 +48,20 @@ export default function Placement() {
     onSuccess: () => navigate("/student/workspace"),
   });
 
+  const status = paper.data?.status ?? null;
+  const genJobId = paper.data?.gen_job_id ?? null;
+  useEffect(() => {
+    if (!genJobId) return;
+    if (status !== "generating") return;
+    if (ranJobId === genJobId) return;
+    if (paperGenRunning) return;
+
+    setRanJobId(genJobId);
+    runPaperGen(genJobId)
+      .then(() => qc.invalidateQueries({ queryKey: ["student", "placement", "paper", id] }))
+      .catch(() => {});
+  }, [genJobId, id, paperGenRunning, qc, ranJobId, runPaperGen, status]);
+
   if (paper.isLoading) return <p className="text-slate-500">加载中…</p>;
   if (paper.error) return <p className="text-red-600">{(paper.error as Error).message}</p>;
   if (!paper.data) return null;
@@ -50,6 +69,29 @@ export default function Placement() {
   if (Object.keys(answers).length === 0 && questions.length > 0) {
     // init answers once after load
     queueMicrotask(() => setAnswers(defaultAnswers(questions)));
+  }
+
+  if (paper.data.status === "generating") {
+    return (
+      <div className="max-w-2xl mx-auto bg-white shadow rounded p-6 space-y-3">
+        <header className="flex justify-between items-baseline">
+          <h1 className="text-xl font-semibold">摸底测评：{paper.data.title}</h1>
+          <button className="text-sm text-slate-600 underline" onClick={() => navigate("/student/workspace")}>
+            返回工作台
+          </button>
+        </header>
+        <p className="text-slate-600">{paperGen.message ?? "正在生成题目…"}</p>
+        {paperGen.progressPct != null && (
+          <div className="space-y-1">
+            <div className="h-2 bg-slate-100 rounded overflow-hidden">
+              <div className="h-2 bg-slate-900" style={{ width: `${paperGen.progressPct}%` }} />
+            </div>
+            <div className="text-xs text-slate-500">{paperGen.progressPct}%</div>
+          </div>
+        )}
+        {paperGen.error && <p className="text-sm text-red-600">生成失败：{paperGen.error.message}</p>}
+      </div>
+    );
   }
 
   return (

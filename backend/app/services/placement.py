@@ -261,6 +261,7 @@ class PlacementService:
             .scalars()
             .all()
         )
+        active = PaperGenJobService().get_active_for_paper(db, paper_id=paper.id, purpose="placement")
         return PlacementPaperDetail(
             id=paper.id,
             subject_code=paper.subject_code,
@@ -268,6 +269,7 @@ class PlacementService:
             title=paper.subject_code,
             created_at=paper.created_at,
             questions=[cls._question_out(q) for q in questions],
+            gen_job_id=active.id if active is not None else None,
         )
 
     @classmethod

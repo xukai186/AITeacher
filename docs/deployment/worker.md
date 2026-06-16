@@ -1,6 +1,6 @@
 # 后台 Worker 部署说明
 
-从 **P8** 起，计划复审（`plan_review_jobs`）采用 **API 入队 + 独立 Worker 消费** 模式。只启动 FastAPI 而不跑 Worker 时，学情报告「生成明日任务」、摸底/自测提交后的任务生成、每日定时入队等会一直处于 `pending`。
+从 **P8** 起，计划复审（`plan_review_jobs`）采用 **API 入队 + 独立 Worker 消费** 模式；从 **P8+** 起，组卷（`paper_gen_jobs`）也支持 **API 入队 + Worker 消费**。只启动 FastAPI 而不跑 Worker 时，学情报告「生成明日任务」、摸底/自测提交后的任务生成、每日定时入队，以及摸底/自测题目生成等都会一直处于 `pending`/`generating`。
 
 ## 架构
 
@@ -40,7 +40,7 @@ alembic upgrade head
 
 在 `backend/` 目录放置 `.env`，或 systemd `EnvironmentFile` 指向该文件。
 
-## 两个后台命令
+## 后台命令
 
 ### 1. 计划复审 Worker（必须）
 
@@ -60,7 +60,25 @@ python -m app.jobs.run_plan_review_jobs --once
 
 **建议频率：** 每分钟执行一次 `--once`（生产常见做法）。
 
-### 2. 每日入队（推荐）
+### 2. 组卷 Worker（推荐）
+
+消费 `paper_gen_jobs`：为摸底/自测生成题目（支持进度）。
+
+```bash
+cd /path/to/AITeacher/backend
+source .venv/bin/activate
+python -m app.jobs.run_paper_gen_jobs --once
+```
+
+| 参数 | 默认 | 说明 |
+|------|------|------|
+| `--once` | 否 | 处理一批后退出（适合 cron）；省略则常驻循环 |
+| `--limit` | 20 | 每批最多处理 job 数 |
+| `--sleep` | 1.0 | 常驻模式下无任务时的休眠秒数 |
+
+**建议频率：** 每分钟执行一次 `--once`（与 plan review worker 同频率即可）。
+
+### 3. 每日入队（推荐）
 
 为所有启用科目的学员创建**次日**的 `plan_review_jobs`（`trigger=daily_schedule`），并检查连续低完成率触发。
 
@@ -84,6 +102,9 @@ PATH=/usr/local/bin:/usr/bin:/bin
 
 # 每分钟消费计划复审队列
 * * * * * deploy cd /path/to/AITeacher/backend && .venv/bin/python -m app.jobs.run_plan_review_jobs --once >> /var/log/aiteacher/plan-review-worker.log 2>&1
+
+# 每分钟消费组卷队列（摸底/自测生成）
+* * * * * deploy cd /path/to/AITeacher/backend && .venv/bin/python -m app.jobs.run_paper_gen_jobs --once >> /var/log/aiteacher/paper-gen-worker.log 2>&1
 
 # 每天 00:05 为次日入队（Asia/Shanghai 示例：在 crontab 顶部设 TZ=Asia/Shanghai）
 5 0 * * * deploy cd /path/to/AITeacher/backend && .venv/bin/python -m app.jobs.daily_task_generation >> /var/log/aiteacher/daily-enqueue.log 2>&1
@@ -165,6 +186,12 @@ SELECT status, COUNT(*) FROM plan_review_jobs GROUP BY status;
 
 长期大量 `pending` 且 `run_after <= now()` → Worker 未跑或失败。
 
+组卷队列同理：
+
+```sql
+SELECT status, COUNT(*) FROM paper_gen_jobs GROUP BY status;
+```
+
 ### 最近失败任务
 
 ```sql
@@ -177,6 +204,16 @@ LIMIT 20;
 
 失败 job 在达到 `max_attempts` 后为 `failed`；可结合日志排查后手动改回 `pending` 重试（一期无管理 UI）。
 
+组卷失败：
+
+```sql
+SELECT id, student_user_id, subject_code, purpose, last_error, attempts, updated_at
+FROM paper_gen_jobs
+WHERE status IN ('failed', 'retry')
+ORDER BY updated_at DESC
+LIMIT 20;
+```
+
 ### 本地手动跑一批
 
 ```bash
@@ -186,15 +223,18 @@ python -m app.jobs.run_plan_review_jobs --once --limit 10
 
 ## 与 API 行为对照
 
-| 路径 | 是否同步执行 PlanReview |
-|------|-------------------------|
+| 路径 | PlanReview | PaperGen |
+|------|----------|----------|
 | 对话内 `generate_daily_tasks` | 是（即时） |
-| `POST /student/agent/apply-recommendations` | 否，仅入队 |
-| 摸底 / 自测提交 | 否，仅入队 |
-| `daily_task_generation` cron | 否，仅入队 |
+| `POST /student/agent/apply-recommendations` | 否，仅入队 | - |
+| 摸底 / 自测提交 | 否，仅入队 | - |
+| `daily_task_generation` cron | 否，仅入队 | - |
+| `POST /student/placement/start` | - | 否，仅入队（返回 `gen_job_id`） |
+| `POST /student/self-tests/generate` | - | 否，仅入队（返回 `gen_job_id`） |
+| `GET /student/paper-gen-jobs/{id}` | - | 查询状态（开发环境会尝试推进 1 个 job） |
 
 ## 相关文档
 
 - [P8 异步入队计划](../superpowers/plans/2026-06-01-p8-async-enqueue-only.md)
 - [P7 每日定时入队](../superpowers/plans/2026-05-29-p7-scheduler-planner-ui.md)
-- 实现：`backend/app/jobs/run_plan_review_jobs.py`、`backend/app/jobs/daily_task_generation.py`
+- 实现：`backend/app/jobs/run_plan_review_jobs.py`、`backend/app/jobs/daily_task_generation.py`、`backend/app/jobs/run_paper_gen_jobs.py`
