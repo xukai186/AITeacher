@@ -38,3 +38,22 @@ def test_admin_upserts_and_reads_model_policy(client, db_session):
     assert get_resp.status_code == 200
     assert any(p["scene"] == "chat" for p in get_resp.json())
 
+
+def test_admin_upserts_grading_model_policy(client, db_session):
+    _seed_admin(db_session)
+    token = _token(client)
+
+    upsert = client.put(
+        "/admin/model-policies/grading",
+        json={
+            "scene": "grading",
+            "provider": "openai_compat",
+            "model": "qwen-plus",
+            "params": {"base_url": "https://example.invalid/v1", "api_key": "k"},
+        },
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert upsert.status_code == 200
+    assert upsert.json()["scene"] == "grading"
+    assert upsert.json()["model"] == "qwen-plus"
+
