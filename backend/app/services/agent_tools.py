@@ -92,8 +92,10 @@ class AgentToolRegistry:
             return {"ok": False, "reasons": eligibility.reasons}
 
         from app.services.self_test import SelfTestService
+        from app.services.paper_gen_jobs import run_paper_gen_job_if_needed
 
-        paper = SelfTestService.generate(db, student_user_id, subject_code)
+        paper, gen_job_id = SelfTestService.generate(db, student_user_id, subject_code)
+        run_paper_gen_job_if_needed(db, gen_job_id)
         q_count = db.execute(
             select(func.count(SelfTestQuestion.id)).where(SelfTestQuestion.paper_id == paper.id)
         ).scalar_one()

@@ -2,6 +2,7 @@ import { api } from "./client";
 
 export type PlacementStartOut = {
   subjects: { subject_code: string; status: string; paper_id: string | null }[];
+  gen_job_id?: string | null;
 };
 
 export type PlacementPaperSummary = {

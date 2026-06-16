@@ -1,4 +1,5 @@
 import os
+from unittest.mock import patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -21,7 +22,7 @@ TestSession = sessionmaker(
 )
 
 
-def _sync_test_schema(connection) -> None:
+def _sync_test_schema(connection, *, commit: bool = False) -> None:
     """create_all does not add columns to existing tables; patch drift for tests."""
     Base.metadata.create_all(bind=connection)
     insp = inspect(connection)
@@ -47,6 +48,15 @@ def _sync_test_schema(connection) -> None:
         ):
             if col not in wb_cols:
                 connection.execute(text(f"ALTER TABLE wrong_book_items ADD COLUMN {col} {ddl}"))
+    if commit:
+        connection.commit()
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _committed_test_schema() -> None:
+    """Commit DDL outside per-test rollbacks so new tables stay visible."""
+    with test_engine.connect() as connection:
+        _sync_test_schema(connection, commit=True)
 
 
 @pytest.fixture
@@ -71,7 +81,16 @@ def client(db_session) -> TestClient:
         finally:
             pass
 
+    def _kick_in_test(job_id):
+        from app.services.paper_gen_jobs import run_paper_gen_job_if_needed
+
+        run_paper_gen_job_if_needed(db_session, job_id)
+
     app.dependency_overrides[get_db] = _override_get_db
-    with TestClient(app) as c:
+    with (
+        patch("app.routers.student_placement.kick_paper_gen_job", side_effect=_kick_in_test),
+        patch("app.routers.student_self_test.kick_paper_gen_job", side_effect=_kick_in_test),
+        TestClient(app) as c,
+    ):
         yield c
     app.dependency_overrides.clear()

@@ -25,7 +25,8 @@ from app.services.self_test_eligibility import SelfTestEligibilityService
 from app.services.learning_events import LearningEventService
 from app.services.wrong_book import WrongBookService
 from app.services.wrong_book_followup import WrongBookFollowUpService
-from app.services.paper_gen import DEFAULT_QUESTION_COUNT, PaperGenService
+from app.services.paper_gen import DEFAULT_QUESTION_COUNT
+from app.services.paper_gen_jobs import PaperGenJobService
 from app.seed_syllabus import seed_minimal_syllabus
 
 QUESTIONS_PER_PAPER = DEFAULT_QUESTION_COUNT
@@ -63,7 +64,7 @@ class SelfTestService:
         subject_code: str,
         *,
         skip_eligibility: bool = False,
-    ) -> SelfTestPaper:
+    ) -> tuple[SelfTestPaper, uuid.UUID | None]:
         cls._ensure_syllabus(db)
 
         if not skip_eligibility:
@@ -93,49 +94,21 @@ class SelfTestService:
         paper = SelfTestPaper(
             student_user_id=student_user_id,
             subject_code=subject_code,
-            status="ready",
+            status="generating",
             source="ai",
         )
         db.add(paper)
         db.flush()
 
-        try:
-            generated = PaperGenService().generate_for_self_test(
-                db,
-                org_id=student.org_id,
-                student_user_id=student_user_id,
-                subject_code=subject_code,
-                question_count=QUESTIONS_PER_PAPER,
-            )
-        except ValueError as exc:
-            raise HTTPException(
-                status.HTTP_503_SERVICE_UNAVAILABLE,
-                str(exc),
-            ) from exc
-
-        if not generated:
-            raise HTTPException(
-                status.HTTP_503_SERVICE_UNAVAILABLE,
-                "Failed to generate self-test questions",
-            )
-
-        for q in generated:
-            db.add(
-                SelfTestQuestion(
-                    paper_id=paper.id,
-                    seq=q.seq,
-                    knowledge_node_id=q.knowledge_node_id,
-                    q_type=q.q_type,
-                    stem=q.stem,
-                    choices_json=q.choices_json,
-                    answer_key=q.answer_key,
-                    points=q.points,
-                    rubric_json=None,
-                )
-            )
-
+        enqueued = PaperGenJobService().enqueue(
+            db,
+            student_user_id=student_user_id,
+            subject_code=subject_code,
+            purpose="self_test",
+            paper_id=paper.id,
+        )
         db.commit()
-        return paper
+        return paper, enqueued.job_id
 
     @staticmethod
     def list_papers(db: Session, student_user_id: uuid.UUID) -> list[SelfTestPaper]:

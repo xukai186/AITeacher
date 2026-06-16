@@ -10,6 +10,7 @@ from app.services.plan_review import PlanReviewService
 from app.services.plan_review_jobs import PlanReviewJobRunner
 from app.services.tasks import TaskGenerator
 from tests.factories import make_org, make_user
+from tests.paper_gen_job_helpers import generate_self_test_and_wait, start_placement_and_wait
 
 
 def _seed_student(db):
@@ -40,8 +41,7 @@ def test_self_test_submit_triggers_plan_review_tasks(client, db_session):
     student = _seed_student(db_session)
     token = _token(client)
 
-    start = client.post("/student/placement/start", headers={"Authorization": f"Bearer {token}"})
-    assert start.status_code == 200
+    start_placement_and_wait(client, token, db_session=db_session)
     paper_id = client.get("/student/placement", headers={"Authorization": f"Bearer {token}"}).json()[0]["id"]
     paper = client.get(f"/student/placement/{paper_id}", headers={"Authorization": f"Bearer {token}"}).json()
     assert (
@@ -53,13 +53,8 @@ def test_self_test_submit_triggers_plan_review_tasks(client, db_session):
         == 200
     )
 
-    gen = client.post(
-        "/student/self-tests/generate",
-        json={"subject_code": "english"},
-        headers={"Authorization": f"Bearer {token}"},
-    )
-    assert gen.status_code == 200
-    self_paper_id = gen.json()["id"]
+    gen = generate_self_test_and_wait(client, token, db_session=db_session)
+    self_paper_id = gen["id"]
     self_paper = client.get(
         f"/student/self-tests/{self_paper_id}",
         headers={"Authorization": f"Bearer {token}"},

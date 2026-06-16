@@ -40,8 +40,12 @@ export type SelfTestGradeOut = {
   detail_json: Record<string, unknown>;
 };
 
+export type SelfTestGenerateOut = SelfTestPaperSummaryOut & {
+  gen_job_id?: string | null;
+};
+
 export function generateSelfTest(payload: SelfTestGenerateIn) {
-  return api<SelfTestPaperSummaryOut>("/student/self-tests/generate", {
+  return api<SelfTestGenerateOut>("/student/self-tests/generate", {
     method: "POST",
     body: JSON.stringify(payload),
   });

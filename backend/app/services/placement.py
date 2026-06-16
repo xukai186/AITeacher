@@ -4,7 +4,7 @@ import uuid
 from datetime import date, timedelta
 
 from fastapi import HTTPException, status
-from sqlalchemy import delete, func, select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.models import (
@@ -33,7 +33,8 @@ from app.services.planning import PlanningService
 from app.services.tasks import TaskGenerator
 from app.services.learning_events import LearningEventService
 from app.services.wrong_book import WrongBookService
-from app.services.paper_gen import DEFAULT_QUESTION_COUNT, PaperGenService
+from app.services.paper_gen import DEFAULT_QUESTION_COUNT
+from app.services.paper_gen_jobs import PaperGenJobService
 from app.seed_syllabus import seed_minimal_syllabus
 
 QUESTIONS_PER_SUBJECT = DEFAULT_QUESTION_COUNT
@@ -72,86 +73,61 @@ class PlacementService:
         return all(cls._legacy_template_stem(q.stem) for q in questions)
 
     @classmethod
-    def _regenerate_questions(
-        cls,
-        db: Session,
-        paper: PlacementPaper,
-        student_user_id: uuid.UUID,
-        subject_code: str,
-    ) -> None:
-        db.execute(delete(PlacementQuestion).where(PlacementQuestion.paper_id == paper.id))
-        db.flush()
-        db.commit()
-        generated = cls._generate_questions_data(db, paper, student_user_id, subject_code)
-        for q in generated:
-            db.add(
-                PlacementQuestion(
-                    paper_id=paper.id,
-                    seq=q.seq,
-                    knowledge_node_id=q.knowledge_node_id,
-                    q_type=q.q_type or Q_TYPE,
-                    stem=q.stem,
-                    choices_json=q.choices_json,
-                    answer_key=q.answer_key,
-                    points=q.points,
-                )
-            )
-        db.flush()
+    def _paper_status_label(cls, db: Session, paper: PlacementPaper, student_user_id: uuid.UUID) -> str:
+        if cls._is_submitted(db, paper.id, student_user_id):
+            return "submitted"
+        if paper.status == "generating":
+            return "generating"
+        if paper.status == "failed":
+            return "failed"
+        return "ready"
 
     @classmethod
-    def _generate_questions_data(
+    def _prepare_paper_for_start(
         cls,
         db: Session,
-        paper: PlacementPaper,
         student_user_id: uuid.UUID,
         subject_code: str,
-    ):
-        student = db.get(User, student_user_id)
-        if student is None:
-            raise HTTPException(status.HTTP_404_NOT_FOUND, "student not found")
+    ) -> tuple[PlacementPaper, uuid.UUID | None]:
+        paper = db.execute(
+            select(PlacementPaper).where(
+                PlacementPaper.student_user_id == student_user_id,
+                PlacementPaper.subject_code == subject_code,
+            )
+        ).scalar_one_or_none()
 
-        try:
-            generated = PaperGenService().generate_for_placement(
-                db,
-                org_id=student.org_id,
+        if paper is not None and cls._is_submitted(db, paper.id, student_user_id):
+            return paper, None
+
+        if paper is not None and not cls._needs_regeneration(db, paper.id):
+            paper.status = "ready"
+            return paper, None
+
+        if paper is None:
+            paper = PlacementPaper(
                 student_user_id=student_user_id,
                 subject_code=subject_code,
-                question_count=QUESTIONS_PER_SUBJECT,
+                status="generating",
             )
-        except ValueError as exc:
-            raise HTTPException(
-                status.HTTP_503_SERVICE_UNAVAILABLE,
-                str(exc),
-            ) from exc
+            db.add(paper)
+            db.flush()
+        else:
+            paper.status = "generating"
 
-        if not generated:
-            raise HTTPException(
-                status.HTTP_503_SERVICE_UNAVAILABLE,
-                "Failed to generate placement questions",
-            )
-        return generated
+        active = PaperGenJobService().get_active_for_paper(
+            db, paper_id=paper.id, purpose="placement"
+        )
+        if active is not None:
+            return paper, active.id
 
-    @classmethod
-    def _generate_questions(
-        cls,
-        db: Session,
-        paper: PlacementPaper,
-        student_user_id: uuid.UUID,
-        subject_code: str,
-    ) -> None:
-        for q in cls._generate_questions_data(db, paper, student_user_id, subject_code):
-            db.add(
-                PlacementQuestion(
-                    paper_id=paper.id,
-                    seq=q.seq,
-                    knowledge_node_id=q.knowledge_node_id,
-                    q_type=q.q_type or Q_TYPE,
-                    stem=q.stem,
-                    choices_json=q.choices_json,
-                    answer_key=q.answer_key,
-                    points=q.points,
-                )
-            )
+        enqueued = PaperGenJobService().enqueue(
+            db,
+            student_user_id=student_user_id,
+            subject_code=subject_code,
+            purpose="placement",
+            paper_id=paper.id,
+        )
+        return paper, enqueued.job_id
 
     @classmethod
     def _is_submitted(
@@ -164,34 +140,6 @@ class PlacementService:
             )
         ).scalar_one_or_none()
         return existing is not None
-
-    @classmethod
-    def _get_or_create_paper(
-        cls, db: Session, student_user_id: uuid.UUID, subject_code: str
-    ) -> PlacementPaper:
-        paper = db.execute(
-            select(PlacementPaper).where(
-                PlacementPaper.student_user_id == student_user_id,
-                PlacementPaper.subject_code == subject_code,
-            )
-        ).scalar_one_or_none()
-        if paper is not None:
-            if (
-                not cls._is_submitted(db, paper.id, student_user_id)
-                and cls._needs_regeneration(db, paper.id)
-            ):
-                cls._regenerate_questions(db, paper, student_user_id, subject_code)
-            return paper
-
-        paper = PlacementPaper(
-            student_user_id=student_user_id,
-            subject_code=subject_code,
-            status="ready",
-        )
-        db.add(paper)
-        db.flush()
-        cls._regenerate_questions(db, paper, student_user_id, subject_code)
-        return paper
 
     @classmethod
     def _subject_statuses(
@@ -210,11 +158,10 @@ class PlacementService:
                     PlacementSubjectStatus(subject_code=code, status="pending", paper_id=None)
                 )
                 continue
-            submitted = cls._is_submitted(db, paper.id, student_user_id)
             subjects.append(
                 PlacementSubjectStatus(
                     subject_code=code,
-                    status="submitted" if submitted else "ready",
+                    status=cls._paper_status_label(db, paper, student_user_id),
                     paper_id=paper.id,
                 )
             )
@@ -260,19 +207,18 @@ class PlacementService:
         elif target_code not in enabled_codes:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, "subject not enabled")
 
-        paper = cls._get_or_create_paper(db, student_user_id, target_code)
-        submitted = cls._is_submitted(db, paper.id, student_user_id)
+        paper, gen_job_id = cls._prepare_paper_for_start(db, student_user_id, target_code)
         db.commit()
 
         subjects = cls._subject_statuses(db, student_user_id, enabled_codes)
         primary = PlacementSubjectStatus(
             subject_code=target_code,
-            status="submitted" if submitted else "ready",
+            status=cls._paper_status_label(db, paper, student_user_id),
             paper_id=paper.id,
         )
         others = [s for s in subjects if s.subject_code != target_code]
         others.sort(key=lambda item: (0 if item.status == "ready" else 1, item.subject_code))
-        return PlacementStartOut(subjects=[primary, *others])
+        return PlacementStartOut(subjects=[primary, *others], gen_job_id=gen_job_id)
 
     @classmethod
     def list_papers(cls, db: Session, student_user_id: uuid.UUID) -> list[PlacementPaperSummary]:

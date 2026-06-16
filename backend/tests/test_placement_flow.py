@@ -3,6 +3,7 @@ from sqlalchemy import select
 from app.auth.security import hash_password
 from app.models import DailyTask, MasterPlan, MasterPlanVersion, MasterySnapshot, PlacementPaper, PlacementQuestion, PlacementResult, StudentProfile, StudentSubject, SubjectPlan, SubjectPlanVersion, UserRole, WrongBookItem
 from tests.factories import make_org, make_user
+from tests.paper_gen_job_helpers import start_placement_and_wait
 
 
 def _seed_student(db):
@@ -21,8 +22,7 @@ def _token(client):
 def test_student_can_start_placement_and_get_paper(client, db_session):
     _seed_student(db_session)
     token = _token(client)
-    start = client.post("/student/placement/start", headers={"Authorization": f"Bearer {token}"})
-    assert start.status_code == 200
+    start_placement_and_wait(client, token, db_session=db_session)
 
     papers = db_session.execute(select(PlacementPaper)).scalars().all()
     assert len(papers) == 1
@@ -31,8 +31,7 @@ def test_student_can_start_placement_and_get_paper(client, db_session):
 def test_student_can_submit_placement_and_get_result(client, db_session):
     _seed_student(db_session)
     token = _token(client)
-    start = client.post("/student/placement/start", headers={"Authorization": f"Bearer {token}"})
-    assert start.status_code == 200
+    start_placement_and_wait(client, token, db_session=db_session)
 
     paper_id = client.get("/student/placement", headers={"Authorization": f"Bearer {token}"}).json()[0]["id"]
     paper = client.get(f"/student/placement/{paper_id}", headers={"Authorization": f"Bearer {token}"}).json()
@@ -72,13 +71,13 @@ def test_placement_submit_with_existing_mastery_snapshot(client, db_session):
     """Orphan mastery snapshot (e.g. after question regen) must not block submit."""
     student = _seed_student(db_session)
     token = _token(client)
-    start = client.post(
-        "/student/placement/start",
-        json={"subject_code": "english"},
-        headers={"Authorization": f"Bearer {token}"},
+    start = start_placement_and_wait(
+        client,
+        token,
+        {"subject_code": "english"},
+        db_session=db_session,
     )
-    assert start.status_code == 200
-    paper_id = start.json()["subjects"][0]["paper_id"]
+    paper_id = start["subjects"][0]["paper_id"]
 
     from app.models import MasterySnapshot
 
@@ -120,8 +119,7 @@ def test_placement_submit_with_existing_mastery_snapshot(client, db_session):
 def test_wrong_book_ingested_after_placement_submit(client, db_session):
     _seed_student(db_session)
     token = _token(client)
-    start = client.post("/student/placement/start", headers={"Authorization": f"Bearer {token}"})
-    assert start.status_code == 200
+    start_placement_and_wait(client, token, db_session=db_session)
 
     paper_id = client.get("/student/placement", headers={"Authorization": f"Bearer {token}"}).json()[0]["id"]
 

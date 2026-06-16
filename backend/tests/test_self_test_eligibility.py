@@ -5,6 +5,7 @@ from app.models import SelfTestGrade, SelfTestPaper, SelfTestSubmission, Student
 from app.services.self_test import SelfTestService
 from app.services.self_test_eligibility import SelfTestEligibilityService
 from tests.factories import make_org, make_user
+from tests.paper_gen_job_helpers import finish_paper_gen_jobs
 
 
 def _student(db):
@@ -32,7 +33,9 @@ def test_first_self_test_is_eligible(db_session):
 
 def test_blocks_when_ready_paper_in_progress(db_session):
     student = _student(db_session)
-    SelfTestService.generate(db_session, student.id, "english")
+    paper, _ = SelfTestService.generate(db_session, student.id, "english")
+    finish_paper_gen_jobs(db_session)
+    db_session.commit()
     result = SelfTestEligibilityService().check(
         db_session, student_user_id=student.id, subject_code="english"
     )
@@ -42,7 +45,9 @@ def test_blocks_when_ready_paper_in_progress(db_session):
 
 def test_blocks_within_five_days_of_last_graded(db_session):
     student = _student(db_session)
-    paper = SelfTestService.generate(db_session, student.id, "english")
+    paper, _ = SelfTestService.generate(db_session, student.id, "english")
+    finish_paper_gen_jobs(db_session)
+    db_session.commit()
     now = datetime.now(timezone.utc)
     sub = SelfTestSubmission(
         paper_id=paper.id,
@@ -64,7 +69,9 @@ def test_blocks_within_five_days_of_last_graded(db_session):
 
 def test_allows_after_five_days(db_session):
     student = _student(db_session)
-    paper = SelfTestService.generate(db_session, student.id, "english")
+    paper, _ = SelfTestService.generate(db_session, student.id, "english")
+    finish_paper_gen_jobs(db_session)
+    db_session.commit()
     sub = SelfTestSubmission(
         paper_id=paper.id,
         student_user_id=student.id,

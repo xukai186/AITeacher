@@ -17,6 +17,7 @@ from app.services.paper_gen import PaperGenService
 from app.services.placement import PlacementService
 from app.services.self_test import SelfTestService
 from tests.factories import make_org, make_user
+from tests.paper_gen_job_helpers import finish_paper_gen_jobs
 
 
 def _seed_student_with_syllabus(db):
@@ -204,6 +205,8 @@ def test_placement_start_uses_paper_gen_policy(db_session):
     db_session.commit()
 
     PlacementService.start(db_session, student.id, subject_code="english")
+    finish_paper_gen_jobs(db_session)
+    db_session.commit()
     paper = db_session.execute(select(PlacementPaper)).scalar_one()
     questions = (
         db_session.execute(select(PlacementQuestion).where(PlacementQuestion.paper_id == paper.id))
@@ -237,6 +240,8 @@ def test_placement_start_skips_regeneration_for_existing_llm_questions(db_sessio
     db_session.commit()
 
     PlacementService.start(db_session, student.id, subject_code="english")
+    finish_paper_gen_jobs(db_session)
+    db_session.commit()
     questions = (
         db_session.execute(select(PlacementQuestion).where(PlacementQuestion.paper_id == paper.id))
         .scalars()
@@ -278,6 +283,8 @@ def test_placement_start_regenerates_unsubmitted_paper(db_session):
     db_session.commit()
 
     PlacementService.start(db_session, student.id, subject_code="english")
+    finish_paper_gen_jobs(db_session)
+    db_session.commit()
     questions = (
         db_session.execute(select(PlacementQuestion).where(PlacementQuestion.paper_id == paper.id))
         .scalars()
@@ -332,6 +339,8 @@ def test_placement_start_keeps_submitted_paper(db_session):
     db_session.commit()
 
     PlacementService.start(db_session, student.id, subject_code="english")
+    finish_paper_gen_jobs(db_session)
+    db_session.commit()
     questions = (
         db_session.execute(select(PlacementQuestion).where(PlacementQuestion.paper_id == paper.id))
         .scalars()
@@ -416,9 +425,11 @@ def test_self_test_generate_uses_paper_gen_policy(db_session):
     )
     db_session.commit()
 
-    paper = SelfTestService.generate(
+    paper, gen_job_id = SelfTestService.generate(
         db_session, student.id, "english", skip_eligibility=True
     )
+    finish_paper_gen_jobs(db_session)
+    db_session.commit()
     questions = (
         db_session.execute(select(SelfTestQuestion).where(SelfTestQuestion.paper_id == paper.id))
         .scalars()

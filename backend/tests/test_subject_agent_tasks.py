@@ -8,6 +8,7 @@ from app.services.plan_review_jobs import PlanReviewJobRunner
 from app.services.planning import PlanningService
 from app.services.subject_agent import SubjectAgentService
 from tests.factories import make_org, make_user
+from tests.paper_gen_job_helpers import start_placement_and_wait
 
 
 def _seed_student(db):
@@ -38,8 +39,7 @@ def test_apply_recommendations_enqueues_job(client, db_session):
     student = _seed_student(db_session)
     token = _token(client)
 
-    start = client.post("/student/placement/start", headers={"Authorization": f"Bearer {token}"})
-    assert start.status_code == 200
+    start_placement_and_wait(client, token, db_session=db_session)
     paper_id = client.get("/student/placement", headers={"Authorization": f"Bearer {token}"}).json()[0]["id"]
     paper = client.get(f"/student/placement/{paper_id}", headers={"Authorization": f"Bearer {token}"}).json()
     submit = client.post(

@@ -100,9 +100,12 @@ class AdminInterventionService:
         paper.status = "replaced"
         db.flush()
 
-        new_paper = SelfTestService.generate(
+        from app.services.paper_gen_jobs import run_paper_gen_job_if_needed
+
+        new_paper, gen_job_id = SelfTestService.generate(
             db, student.id, paper.subject_code, skip_eligibility=True
         )
+        run_paper_gen_job_if_needed(db, gen_job_id)
 
         tasks = db.execute(
             select(DailyTask).where(

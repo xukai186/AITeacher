@@ -17,6 +17,10 @@ class SelfTestPaperSummaryOut(BaseModel):
     created_at: datetime
 
 
+class SelfTestGenerateOut(SelfTestPaperSummaryOut):
+    gen_job_id: uuid.UUID | None = None
+
+
 class SelfTestChoiceOut(BaseModel):
     key: str
     text: str

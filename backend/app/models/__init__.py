@@ -16,6 +16,7 @@ from app.models.self_test import (
     SelfTestSubmission,
 )
 from app.models.plan import MasterPlan, MasterPlanVersion, SubjectPlan, SubjectPlanVersion
+from app.models.paper_gen_job import PaperGenJob
 from app.models.plan_review_job import PlanReviewJob
 from app.models.staff_student import StaffStudent
 from app.models.student import StudentProfile, StudentSubject
@@ -38,6 +39,7 @@ __all__ = [
     "MasterySnapshot",
     "Organization",
     "Package",
+    "PaperGenJob",
     "PlanReviewJob",
     "PlacementAnswer",
     "PlacementPaper",
