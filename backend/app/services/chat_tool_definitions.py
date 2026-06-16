@@ -42,6 +42,45 @@ SUBJECT_CHAT_TOOLS: list[dict[str, Any]] = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "list_papers",
+            "description": "列出当前科目的摸底卷与自测卷（最近若干条），用于回顾进度或选择讲解题目。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "limit": {
+                        "type": "integer",
+                        "description": "返回条数上限；默认 5。",
+                    }
+                },
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_paper",
+            "description": "读取一份试卷（摸底/自测）的题目内容，用于讲题或定位薄弱点。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "paper_type": {
+                        "type": "string",
+                        "description": "试卷类型：placement 或 self_test。",
+                        "enum": ["placement", "self_test"],
+                    },
+                    "paper_id": {
+                        "type": "string",
+                        "description": "试卷 ID（UUID 字符串）。",
+                    },
+                },
+                "required": ["paper_type", "paper_id"],
+            },
+        },
+    },
 ]
 
 PLANNER_CHAT_TOOLS: list[dict[str, Any]] = [
