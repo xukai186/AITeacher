@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 import uuid
+from datetime import date
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.models import (
+    DailyTask,
     MasterPlan,
     MasterPlanVersion,
+    PlanReviewJob,
     SelfTestPaper,
     SelfTestSubmission,
     StudentSubject,
@@ -23,8 +26,38 @@ from app.schemas.org_student import (
     OrgStudentPlansOut,
     SubjectPlanVersionOut,
 )
+from app.schemas.plan_review_job import PlanReviewJobOut
 from app.schemas.report import ReportOverviewOut
+from app.schemas.task import DailyTaskOut, TodayTasksOut
 from app.services.report import ReportQuery, ReportService
+
+
+def _plan_review_job_out(job: PlanReviewJob) -> PlanReviewJobOut:
+    result = job.result_json or {}
+    warnings = list(result.get("warnings") or [])
+    scheduled = result.get("scheduled_minutes")
+    budget = result.get("budget_minutes")
+    over_budget = False
+    if isinstance(scheduled, int) and isinstance(budget, int) and scheduled > budget:
+        over_budget = True
+    return PlanReviewJobOut(
+        id=job.id,
+        status=job.status,
+        subject_code=job.subject_code,
+        target_date=job.target_date,
+        trigger=job.trigger,
+        attempts=job.attempts,
+        last_error=job.last_error,
+        result_json=job.result_json,
+        created_at=job.created_at,
+        updated_at=job.updated_at,
+        created_count=result.get("created_count"),
+        skipped_count=result.get("skipped_count"),
+        scheduled_minutes=scheduled,
+        budget_minutes=budget,
+        over_budget=over_budget,
+        warnings=warnings,
+    )
 
 
 class OrgStudentService:
@@ -99,13 +132,20 @@ class OrgStudentService:
         ).scalar_one_or_none()
 
         master_out: MasterPlanVersionOut | None = None
+        pending_out: MasterPlanVersionOut | None = None
         master_status: str | None = None
+        requires_confirmation = False
         if master is not None:
             master_status = master.status
+            requires_confirmation = master.pending_version_id is not None
             if master.current_version_id:
                 ver = db.get(MasterPlanVersion, master.current_version_id)
                 if ver is not None:
                     master_out = MasterPlanVersionOut.model_validate(ver)
+            if master.pending_version_id:
+                pending = db.get(MasterPlanVersion, master.pending_version_id)
+                if pending is not None:
+                    pending_out = MasterPlanVersionOut.model_validate(pending)
 
         subject_versions: list[SubjectPlanVersionOut] = []
         subject_plans = db.execute(
@@ -128,10 +168,46 @@ class OrgStudentService:
                 )
             )
 
+        review_jobs = (
+            db.execute(
+                select(PlanReviewJob)
+                .where(PlanReviewJob.student_user_id == student.id)
+                .order_by(PlanReviewJob.created_at.desc())
+                .limit(10)
+            )
+            .scalars()
+            .all()
+        )
+
         return OrgStudentPlansOut(
             master_status=master_status,
             master_version=master_out,
+            pending_version=pending_out,
+            requires_confirmation=requires_confirmation,
             subject_versions=subject_versions,
+            plan_review_jobs=[_plan_review_job_out(j) for j in review_jobs],
+        )
+
+    def list_tasks(
+        self, db: Session, *, student: User, task_date: date | None = None
+    ) -> TodayTasksOut:
+        day = task_date or date.today()
+        tasks = (
+            db.execute(
+                select(DailyTask)
+                .where(
+                    DailyTask.student_user_id == student.id,
+                    DailyTask.date == day,
+                    DailyTask.status == "pending",
+                )
+                .order_by(DailyTask.created_at)
+            )
+            .scalars()
+            .all()
+        )
+        return TodayTasksOut(
+            date=day,
+            tasks=[DailyTaskOut.model_validate(t) for t in tasks],
         )
 
     def list_papers(self, db: Session, *, student: User, limit: int = 50) -> list[OrgPaperSummaryOut]:

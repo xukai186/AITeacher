@@ -12,6 +12,7 @@ from app.schemas.package import AssignPackageRequest
 from app.schemas.staff import StaffAssignmentOut, StaffAssignmentRequest
 from app.schemas.student import StudentCreate, StudentDetail, StudentSummary
 from app.services.audit import record_audit
+from app.services.org_student_signals import signals_for_students
 
 router = APIRouter(prefix="/admin/students", tags=["admin-students"])
 
@@ -73,6 +74,8 @@ def list_students(
         .where(User.org_id == admin.org_id, User.role == UserRole.student)
         .order_by(User.name)
     ).all()
+    student_ids = [user.id for user, _ in rows]
+    signals = signals_for_students(db, student_ids)
     return [
         StudentSummary(
             id=user.id,
@@ -81,6 +84,10 @@ def list_students(
             exam_year=profile.exam_year,
             exam_date=profile.exam_date,
             package_id=profile.package_id,
+            pending_task_count=signals[user.id].pending_task_count,
+            open_review_job_count=signals[user.id].open_review_job_count,
+            requires_plan_confirmation=signals[user.id].requires_plan_confirmation,
+            wrong_added_7d=signals[user.id].wrong_added_7d,
         )
         for user, profile in rows
     ]

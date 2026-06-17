@@ -5,13 +5,16 @@ from sqlalchemy import select
 from app.auth.security import hash_password
 from app.models import (
     AuditLog,
+    DailyTask,
     MasterPlan,
     MasterPlanVersion,
+    PlanReviewJob,
     StaffStudent,
     StudentProfile,
     StudentSubject,
     UserRole,
 )
+from app.services.master_plan_activation import MasterPlanActivationService
 from app.services.planning import PlanningService
 from app.services.self_test import SelfTestService
 from tests.factories import make_org, make_user
@@ -134,3 +137,96 @@ def test_lock_and_replace_paper(client, db_session):
 
     db_session.refresh(paper)
     assert paper.status == "replaced"
+
+
+def test_org_plans_pending_confirmation_and_review_jobs(client, db_session):
+    _, admin, _, student = _seed_student_with_plan(db_session)
+    plan = db_session.execute(
+        select(MasterPlan).where(MasterPlan.student_user_id == student.id)
+    ).scalar_one()
+    current = db_session.get(MasterPlanVersion, plan.current_version_id)
+    svc = MasterPlanActivationService()
+    svc.propose_version(
+        db_session,
+        plan=plan,
+        daily_time_budget_json=[
+            {"date": entry["date"], "minutes": 60}
+            for entry in (current.daily_time_budget_json or [])
+        ],
+        weekly_goals_json=current.weekly_goals_json,
+        source="ai",
+    )
+    db_session.add(
+        PlanReviewJob(
+            student_user_id=student.id,
+            subject_code="english",
+            target_date=date.today() + timedelta(days=1),
+            trigger="manual_apply",
+            status="pending",
+        )
+    )
+    db_session.commit()
+
+    token = _login(client, "admin@demo.example", "pw")
+    headers = {"Authorization": f"Bearer {token}"}
+    resp = client.get(f"/org/students/{student.id}/plans", headers=headers)
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["requires_confirmation"] is True
+    assert body["pending_version"] is not None
+    assert len(body["plan_review_jobs"]) >= 1
+    assert body["plan_review_jobs"][0]["status"] == "pending"
+
+
+def test_org_tasks_endpoint(client, db_session):
+    _, admin, _, student = _seed_student_with_plan(db_session)
+    tomorrow = date.today() + timedelta(days=1)
+    db_session.add(
+        DailyTask(
+            student_user_id=student.id,
+            date=tomorrow,
+            subject_code="english",
+            type="review_wrong",
+            status="pending",
+            est_minutes=20,
+            title="复习错题",
+        )
+    )
+    db_session.commit()
+
+    token = _login(client, "admin@demo.example", "pw")
+    headers = {"Authorization": f"Bearer {token}"}
+    resp = client.get(
+        f"/org/students/{student.id}/tasks",
+        headers=headers,
+        params={"task_date": tomorrow.isoformat()},
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["date"] == tomorrow.isoformat()
+    assert len(body["tasks"]) == 1
+    assert body["tasks"][0]["title"] == "复习错题"
+
+
+def test_student_list_includes_signals(client, db_session):
+    _, admin, _, student = _seed_student_with_plan(db_session)
+    today = date.today()
+    db_session.add(
+        DailyTask(
+            student_user_id=student.id,
+            date=today,
+            subject_code="english",
+            type="self_test",
+            status="pending",
+            est_minutes=30,
+            title="自测",
+        )
+    )
+    db_session.commit()
+
+    token = _login(client, "admin@demo.example", "pw")
+    headers = {"Authorization": f"Bearer {token}"}
+    resp = client.get("/admin/students", headers=headers)
+    assert resp.status_code == 200
+    row = next(item for item in resp.json() if item["id"] == str(student.id))
+    assert row["pending_task_count"] == 1

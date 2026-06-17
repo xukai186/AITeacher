@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { assignPackage, listPackages } from "@/api/packages";
 import { createStudent, listStudents, Student } from "@/api/students";
+import { StudentSignals } from "@/components/org/StudentSignals";
 
 export default function StudentsList() {
   const qc = useQueryClient();
@@ -106,6 +107,7 @@ export default function StudentsList() {
                 <th className="px-4 py-2">姓名</th>
                 <th className="px-4 py-2">邮箱</th>
                 <th className="px-4 py-2">考试年份</th>
+                <th className="px-4 py-2">学情摘要</th>
                 <th className="px-4 py-2">套餐</th>
                 <th className="px-4 py-2" />
               </tr>
@@ -116,6 +118,9 @@ export default function StudentsList() {
                   <td className="px-4 py-2">{s.name}</td>
                   <td className="px-4 py-2">{s.email}</td>
                   <td className="px-4 py-2">{s.exam_year}</td>
+                  <td className="px-4 py-2">
+                    <StudentSignals student={s} />
+                  </td>
                   <td className="px-4 py-2">
                     <select
                       className="border rounded px-2 py-1 text-sm"
@@ -145,7 +150,7 @@ export default function StudentsList() {
               ))}
               {data.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="px-4 py-6 text-center text-slate-500">
+                  <td colSpan={6} className="px-4 py-6 text-center text-slate-500">
                     暂无学员
                   </td>
                 </tr>

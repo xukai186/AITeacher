@@ -1,4 +1,5 @@
 import uuid
+from datetime import date
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
@@ -14,6 +15,7 @@ from app.schemas.org_student import (
     OrgPaperSummaryOut,
     PaperActionOut,
 )
+from app.schemas.task import TodayTasksOut
 from app.schemas.wrong_book import WrongBookItemOut
 from app.services.admin_intervention import AdminInterventionService
 from app.services.org_student import OrgStudentService
@@ -44,6 +46,15 @@ def student_plans(
     db: Session = Depends(get_db),
 ) -> OrgStudentPlansOut:
     return OrgStudentService().plans(db, student=student)
+
+
+@router.get("/{student_id}/tasks", response_model=TodayTasksOut)
+def student_tasks(
+    student: User = Depends(_student_dep),
+    db: Session = Depends(get_db),
+    task_date: date | None = Query(default=None),
+) -> TodayTasksOut:
+    return OrgStudentService().list_tasks(db, student=student, task_date=task_date)
 
 
 @router.patch("/{student_id}/plans/master", response_model=MasterPlanVersionOut)

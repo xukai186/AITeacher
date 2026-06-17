@@ -7,6 +7,10 @@ export type Student = {
   exam_year: number;
   exam_date: string | null;
   package_id: string | null;
+  pending_task_count?: number;
+  open_review_job_count?: number;
+  requires_plan_confirmation?: boolean;
+  wrong_added_7d?: number;
 };
 
 export type CreateStudentBody = {
