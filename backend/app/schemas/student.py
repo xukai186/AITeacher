@@ -21,6 +21,10 @@ class StudentSummary(BaseModel):
     exam_year: int
     exam_date: date | None
     package_id: uuid.UUID | None
+    pending_task_count: int = 0
+    open_review_job_count: int = 0
+    requires_plan_confirmation: bool = False
+    wrong_added_7d: int = 0
 
 
 class StudentDetail(StudentSummary):

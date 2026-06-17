@@ -3,6 +3,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.schemas.plan_review_job import PlanReviewJobOut
 from app.schemas.report import ReportOverviewOut
 from app.schemas.wrong_book import WrongBookItemOut
 
@@ -52,7 +53,10 @@ class SubjectPlanVersionOut(BaseModel):
 class OrgStudentPlansOut(BaseModel):
     master_status: str | None
     master_version: MasterPlanVersionOut | None
+    pending_version: MasterPlanVersionOut | None = None
+    requires_confirmation: bool = False
     subject_versions: list[SubjectPlanVersionOut]
+    plan_review_jobs: list[PlanReviewJobOut] = Field(default_factory=list)
 
 
 class MasterPlanBudgetPatchIn(BaseModel):
