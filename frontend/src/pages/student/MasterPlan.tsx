@@ -41,6 +41,22 @@ export default function MasterPlanPage() {
       </p>
 
       <section className="bg-white rounded shadow p-4">
+        <h2 className="font-medium mb-2">本周目标</h2>
+        {data.active_version.weekly_goals_json?.length ? (
+          <ul className="list-disc pl-5 text-sm space-y-2">
+            {data.active_version.weekly_goals_json.map((g: { title?: string; description?: string }, i: number) => (
+              <li key={i}>
+                <span className="font-medium">{g.title}</span>
+                {g.description ? <span className="text-slate-600"> — {g.description}</span> : null}
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="text-sm text-slate-500">暂无周目标</p>
+        )}
+      </section>
+
+      <section className="bg-white rounded shadow p-4">
         <h2 className="font-medium mb-2">每日时间预算（已生效）</h2>
         <BudgetTable budget={data.active_version.daily_time_budget_json} />
       </section>

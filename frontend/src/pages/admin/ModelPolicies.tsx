@@ -29,6 +29,12 @@ const SCENE_CONFIG: Record<
     defaultModel: "gpt-4.1-mini",
     saveLabel: "保存 grading 策略",
   },
+  planning: {
+    title: "规划场景（planning）",
+    description: "摸底后生成总计划与分科计划文案；未配置或失败时降级为规则模板。",
+    defaultModel: "gpt-4.1-mini",
+    saveLabel: "保存 planning 策略",
+  },
 };
 
 function paramsToText(params: Record<string, unknown>): string {
@@ -228,6 +234,11 @@ export default function ModelPolicies() {
       <ScenePolicyForm
         scene="grading"
         policy={data?.find((p) => p.scene === "grading")}
+        isLoading={isLoading}
+      />
+      <ScenePolicyForm
+        scene="planning"
+        policy={data?.find((p) => p.scene === "planning")}
         isLoading={isLoading}
       />
 
