@@ -6,7 +6,8 @@ from datetime import date, timedelta
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models import MasterPlan, MasterPlanVersion, StudentSubject, SubjectPlan, SubjectPlanVersion
+from app.models import MasterPlan, MasterPlanVersion, StudentSubject, SubjectPlan, SubjectPlanVersion, User
+from app.services.plan_draft import PlanDraftService
 
 
 class PlanningService:
@@ -25,22 +26,6 @@ class PlanningService:
             .order_by(MasterPlanVersion.version.desc())
             .limit(1)
         ).scalar_one_or_none()
-        if version is None:
-            today = date.today()
-            daily_time_budget = [
-                {"date": str(today + timedelta(days=i)), "minutes": 180} for i in range(7)
-            ]
-            version = MasterPlanVersion(
-                plan_id=master.id,
-                version=1,
-                source="ai",
-                weekly_goals_json=[],
-                daily_time_budget_json=daily_time_budget,
-            )
-            db.add(version)
-            db.flush()
-
-        master.current_version_id = version.id
 
         subject_codes = list(
             db.execute(
@@ -52,6 +37,63 @@ class PlanningService:
             .scalars()
             .all()
         )
+
+        needs_master = version is None
+        needs_subjects: list[str] = []
+        for subject_code in subject_codes:
+            plan = db.execute(
+                select(SubjectPlan).where(
+                    SubjectPlan.student_user_id == student_user_id,
+                    SubjectPlan.subject_code == subject_code,
+                )
+            ).scalar_one_or_none()
+            if plan is None:
+                needs_subjects.append(subject_code)
+                continue
+            ver = db.execute(
+                select(SubjectPlanVersion)
+                .where(SubjectPlanVersion.plan_id == plan.id)
+                .order_by(SubjectPlanVersion.version.desc())
+                .limit(1)
+            ).scalar_one_or_none()
+            if ver is None:
+                needs_subjects.append(subject_code)
+
+        draft = None
+        if needs_master or needs_subjects:
+            student = db.get(User, student_user_id)
+            org_id = student.org_id if student is not None else None
+            if org_id is not None:
+                draft = PlanDraftService().draft_initial_plans(
+                    db,
+                    student_user_id=student_user_id,
+                    org_id=org_id,
+                    subject_codes=subject_codes,
+                )
+
+        if version is None:
+            today = date.today()
+            daily_time_budget = (
+                draft.daily_time_budget_json
+                if draft is not None
+                else [
+                    {"date": str(today + timedelta(days=i)), "minutes": 180}
+                    for i in range(7)
+                ]
+            )
+            weekly_goals = draft.weekly_goals_json if draft is not None else []
+            version = MasterPlanVersion(
+                plan_id=master.id,
+                version=1,
+                source="ai",
+                weekly_goals_json=weekly_goals,
+                daily_time_budget_json=daily_time_budget,
+            )
+            db.add(version)
+            db.flush()
+
+        master.current_version_id = version.id
+
         for subject_code in subject_codes:
             plan = db.execute(
                 select(SubjectPlan).where(
@@ -71,13 +113,22 @@ class PlanningService:
                 .limit(1)
             ).scalar_one_or_none()
             if ver is None:
+                phases = None
+                if draft is not None:
+                    phases = draft.subject_phases_json.get(subject_code)
+                if not phases:
+                    phases = [
+                        {
+                            "title": "起步阶段",
+                            "days": 7,
+                            "notes": f"{subject_code} 基础巩固",
+                        }
+                    ]
                 ver = SubjectPlanVersion(
                     plan_id=plan.id,
                     version=1,
                     source="ai",
-                    phases_json=[
-                        {"title": "起步阶段", "days": 7, "notes": f"{subject_code} 基础巩固"}
-                    ],
+                    phases_json=phases,
                 )
                 db.add(ver)
                 db.flush()
@@ -85,4 +136,3 @@ class PlanningService:
             plan.current_version_id = ver.id
 
         db.flush()
-
