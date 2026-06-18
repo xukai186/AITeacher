@@ -54,7 +54,7 @@ export default function SelfTestPaper() {
       <PaperGeneratingView
         title="自测做题"
         error={new Error("试卷生成失败，请返回列表重新生成")}
-        onBack={() => navigate("/student/self-tests")}
+        onBack={() => navigate("/student/papers")}
       />
     );
   }
@@ -66,7 +66,7 @@ export default function SelfTestPaper() {
         message={generation.message}
         progressPct={generation.progressPct}
         error={generation.error}
-        onBack={() => navigate("/student/self-tests")}
+        onBack={() => navigate("/student/papers")}
       />
     );
   }
@@ -79,8 +79,8 @@ export default function SelfTestPaper() {
     <div className="max-w-4xl mx-auto bg-white shadow rounded p-6 space-y-4">
       <header className="flex justify-between items-baseline">
         <h1 className="text-xl font-semibold">自测做题</h1>
-        <button className="text-sm text-slate-600 underline" onClick={() => navigate("/student/self-tests")}>
-          返回列表
+        <button className="text-sm text-slate-600 underline" onClick={() => navigate("/student/papers")}>
+          返回试卷中心
         </button>
       </header>
 

@@ -16,6 +16,7 @@ import SelfTestResult from "@/pages/student/SelfTestResult";
 import WrongBook from "@/pages/student/WrongBook";
 import Report from "@/pages/student/Report";
 import MasterPlanPage from "@/pages/student/MasterPlan";
+import PaperCenter from "@/pages/student/PaperCenter";
 
 export default function App() {
   return (
@@ -57,6 +58,7 @@ export default function App() {
       >
         <Route path="/student/workspace/*" element={<Workspace />} />
         <Route path="/student/placement/:paperId" element={<Placement />} />
+        <Route path="/student/papers" element={<PaperCenter />} />
         <Route path="/student/self-tests" element={<SelfTests />} />
         <Route path="/student/self-tests/:paperId" element={<SelfTestPaper />} />
         <Route path="/student/self-tests/result/:submissionId" element={<SelfTestResult />} />
