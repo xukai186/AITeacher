@@ -121,6 +121,42 @@ class ModelGateway:
                 elif name == "trigger_plan_review":
                     reviews = data.get("reviews") or []
                     text = f"已提交 {len(reviews)} 个科目的计划复审任务，后台 worker 将生成明日任务。"
+                elif name == "explain_question":
+                    text = (
+                        f"已获取第 {data.get('question_seq')} 题讲评材料："
+                        f"{data.get('explanation_hint', '')}"
+                    )
+                elif name == "propose_subject_plan":
+                    text = (
+                        f"已为 {data.get('subject_code')} 更新分科计划至 v{data.get('version')}。"
+                        if data.get("ok")
+                        else "分科计划更新失败。"
+                    )
+                elif name == "request_plan_adjustment":
+                    text = (
+                        f"已提交计划调整请求（{data.get('target_date')}），"
+                        "后台将复审并更新任务。"
+                        if data.get("ok")
+                        else "计划调整请求失败。"
+                    )
+                elif name == "get_weekly_calendar":
+                    days = data.get("days") or []
+                    pending = sum(d.get("pending_count", 0) for d in days)
+                    text = f"已读取未来 7 天日历，共 {pending} 项待办任务。"
+                elif name == "propose_master_plan":
+                    if data.get("ok"):
+                        text = (
+                            "总规划调整已提交。"
+                            + (
+                                "需学生在总计划页确认后生效。"
+                                if data.get("requires_student_confirmation")
+                                else "已自动生效。"
+                            )
+                        )
+                    else:
+                        text = "总规划调整失败。"
+                elif name in ("list_papers", "get_paper", "generate_paper"):
+                    text = f"试卷工具 {name} 已完成，请根据返回数据继续讲解或建议。"
                 else:
                     text = f"[mock:{scene}] 工具 {name} 已完成。"
                 digest = hashlib.sha256(f"{model}:{text}".encode()).hexdigest()[:6]
@@ -196,6 +232,56 @@ class ModelGateway:
                         id=f"call_{uuid.uuid4().hex[:8]}",
                         name="generate_daily_tasks",
                         arguments="{}",
+                    ),
+                )
+            )
+
+        if "explain_question" in tool_names and re.search(r"讲|讲解|解释|为什么|第.?题", last_user):
+            return ModelCompletion(
+                tool_calls=(
+                    ToolCall(
+                        id=f"call_{uuid.uuid4().hex[:8]}",
+                        name="explain_question",
+                        arguments='{"paper_type":"self_test","paper_id":"00000000-0000-0000-0000-000000000001","question_seq":1}',
+                    ),
+                )
+            )
+
+        if "request_plan_adjustment" in tool_names and re.search(
+            r"调整|改计划|太慢|太快|跟不上", last_user
+        ):
+            return ModelCompletion(
+                tool_calls=(
+                    ToolCall(
+                        id=f"call_{uuid.uuid4().hex[:8]}",
+                        name="request_plan_adjustment",
+                        arguments='{"reason":"学生请求调整"}',
+                    ),
+                )
+            )
+
+        if "get_weekly_calendar" in tool_names and re.search(
+            r"日历|本周|一周|7天|七天|任务安排", last_user
+        ):
+            return ModelCompletion(
+                tool_calls=(
+                    ToolCall(
+                        id=f"call_{uuid.uuid4().hex[:8]}",
+                        name="get_weekly_calendar",
+                        arguments="{}",
+                    ),
+                )
+            )
+
+        if "propose_master_plan" in tool_names and re.search(
+            r"总规划|总计划|每日时长|时间预算|周目标", last_user
+        ) and re.search(r"调整|增加|减少|改成|改为", last_user):
+            return ModelCompletion(
+                tool_calls=(
+                    ToolCall(
+                        id=f"call_{uuid.uuid4().hex[:8]}",
+                        name="propose_master_plan",
+                        arguments='{"daily_minutes":150}',
                     ),
                 )
             )

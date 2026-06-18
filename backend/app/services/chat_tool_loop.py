@@ -136,8 +136,8 @@ class ChatToolLoop:
             lines.append(f"当前科目：{subject_code}。")
         if tool_names:
             lines.append(
-                "当学生询问学情、薄弱点、学习建议，或明确要求生成/安排明日任务时，"
-                "请调用可用工具获取数据或生成任务，再基于工具结果给出可执行建议。"
+                "当学生询问学情、薄弱点、学习建议、讲题、计划调整，或明确要求生成/安排任务时，"
+                "请调用可用工具获取数据或执行操作，再基于工具结果给出可执行建议。"
             )
             lines.append(f"可用工具：{', '.join(tool_names)}。")
         else:

@@ -81,6 +81,78 @@ SUBJECT_CHAT_TOOLS: list[dict[str, Any]] = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "explain_question",
+            "description": (
+                "讲解试卷中的某一题：返回题干、选项、学生作答、正确答案/评分要点与讲评提示。"
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "paper_type": {
+                        "type": "string",
+                        "enum": ["placement", "self_test"],
+                    },
+                    "paper_id": {"type": "string"},
+                    "question_seq": {
+                        "type": "integer",
+                        "description": "题号（从 1 开始）；与 question_id 二选一。",
+                    },
+                    "question_id": {"type": "string"},
+                },
+                "required": ["paper_type", "paper_id"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "propose_subject_plan",
+            "description": "为当前科目提议新的分科阶段计划（生成新版本并立即生效）。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "phases": {
+                        "type": "array",
+                        "description": "阶段列表，每项含 title、days、notes。",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "title": {"type": "string"},
+                                "days": {"type": "integer"},
+                                "notes": {"type": "string"},
+                            },
+                            "required": ["title"],
+                        },
+                    },
+                },
+                "required": ["phases"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "request_plan_adjustment",
+            "description": "学生请求调整学习计划：为指定日期入队计划复审任务。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "target_date": {
+                        "type": "string",
+                        "description": "目标日期 ISO YYYY-MM-DD；省略则为明天。",
+                    },
+                    "reason": {
+                        "type": "string",
+                        "description": "调整原因摘要，供老师参考。",
+                    },
+                },
+                "required": [],
+            },
+        },
+    },
 ]
 
 PLANNER_CHAT_TOOLS: list[dict[str, Any]] = [
@@ -135,6 +207,49 @@ PLANNER_CHAT_TOOLS: list[dict[str, Any]] = [
                     },
                 },
                 "required": ["subject_code"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_weekly_calendar",
+            "description": "读取未来 7 天的每日任务日历（按日期分组）。",
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "propose_master_plan",
+            "description": (
+                "提议调整总规划：可修改某日每日时长和/或周目标；"
+                "变化超过 15% 时需学生确认。"
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "target_date": {
+                        "type": "string",
+                        "description": "要调整的日期 ISO YYYY-MM-DD；省略则为明天。",
+                    },
+                    "daily_minutes": {
+                        "type": "integer",
+                        "description": "该日总学习时长（分钟）。",
+                    },
+                    "weekly_goals": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "title": {"type": "string"},
+                                "description": {"type": "string"},
+                            },
+                            "required": ["title"],
+                        },
+                    },
+                },
+                "required": [],
             },
         },
     },
