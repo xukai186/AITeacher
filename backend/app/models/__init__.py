@@ -6,6 +6,8 @@ from app.models.learning_event import LearningEvent
 from app.models.mastery import MasterySnapshot
 from app.models.organization import Organization
 from app.models.package import Package
+from app.models.past_exam import PastExamQuestion
+from app.models.past_exam_template import PastExamPaperTemplate
 from app.models.placement import PlacementPaper, PlacementQuestion
 from app.models.placement_submission import PlacementAnswer, PlacementResult, PlacementSubmission
 from app.models.self_test import (
@@ -39,6 +41,8 @@ __all__ = [
     "MasterySnapshot",
     "Organization",
     "Package",
+    "PastExamQuestion",
+    "PastExamPaperTemplate",
     "PaperGenJob",
     "PlanReviewJob",
     "PlacementAnswer",

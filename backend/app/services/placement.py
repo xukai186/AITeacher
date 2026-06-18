@@ -35,6 +35,7 @@ from app.services.learning_events import LearningEventService
 from app.services.wrong_book import WrongBookService
 from app.services.paper_gen import DEFAULT_QUESTION_COUNT
 from app.services.paper_gen_jobs import PaperGenJobService
+from app.services.placement_paper_context import resolve_placement_paper_title
 from app.seed_syllabus import seed_minimal_syllabus
 
 QUESTIONS_PER_SUBJECT = DEFAULT_QUESTION_COUNT
@@ -57,6 +58,8 @@ class PlacementService:
 
     @staticmethod
     def _legacy_template_stem(stem: str) -> bool:
+        if "模拟摸底" in stem:
+            return False
         return "请选择最符合考纲要求的选项" in stem and "摸底·" not in stem
 
     @classmethod
@@ -236,7 +239,9 @@ class PlacementService:
                 id=p.id,
                 subject_code=p.subject_code,
                 status=p.status,
-                title=p.subject_code,
+                title=resolve_placement_paper_title(
+                    db, subject_code=p.subject_code, student_user_id=student_user_id
+                ),
                 created_at=p.created_at,
             )
             for p in papers
@@ -272,7 +277,9 @@ class PlacementService:
             id=paper.id,
             subject_code=paper.subject_code,
             status=paper.status,
-            title=paper.subject_code,
+            title=resolve_placement_paper_title(
+                db, subject_code=paper.subject_code, student_user_id=student_user_id
+            ),
             created_at=paper.created_at,
             questions=[cls._question_out(q) for q in questions],
             gen_job_id=gen_job_id,

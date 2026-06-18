@@ -48,6 +48,10 @@ def _sync_test_schema(connection, *, commit: bool = False) -> None:
         ):
             if col not in wb_cols:
                 connection.execute(text(f"ALTER TABLE wrong_book_items ADD COLUMN {col} {ddl}"))
+    if "syllabus_nodes" in insp.get_table_names():
+        sn_cols = {c["name"] for c in insp.get_columns("syllabus_nodes")}
+        if "exam_year" not in sn_cols:
+            connection.execute(text("ALTER TABLE syllabus_nodes ADD COLUMN exam_year INTEGER NULL"))
     if commit:
         connection.commit()
 

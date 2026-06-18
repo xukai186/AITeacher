@@ -1,0 +1,265 @@
+from __future__ import annotations
+
+import uuid
+from dataclasses import dataclass
+
+from sqlalchemy import or_, select
+from sqlalchemy.orm import Session
+
+from app.models import PastExamPaperTemplate, PastExamQuestion, StudentProfile, SyllabusNode
+
+DEFAULT_EXAM_YEAR = 2027
+PAST_EXAM_SAMPLE_LIMIT = 5
+DEFAULT_PLACEMENT_SECTIONS = [
+    {"section_name": "综合", "q_type": "single_choice", "count": 10, "knowledge_area": None},
+]
+
+
+@dataclass(frozen=True)
+class PlacementSlot:
+    seq: int
+    section_name: str
+    q_type: str
+    knowledge_node: SyllabusNode
+    section_index: int
+
+
+@dataclass(frozen=True)
+class PlacementGenContext:
+    exam_year: int
+    syllabus_outline: list[dict]
+    past_exam_samples: list[dict]
+    paper_title: str
+    reference_year: int | None
+    paper_sections: list[dict]
+
+
+def resolve_student_exam_year(db: Session, student_user_id: uuid.UUID) -> int:
+    profile = db.get(StudentProfile, student_user_id)
+    if profile is not None:
+        return profile.exam_year
+    return DEFAULT_EXAM_YEAR
+
+
+def load_paper_template(
+    db: Session, *, subject_code: str, syllabus_exam_year: int
+) -> PastExamPaperTemplate | None:
+    return db.execute(
+        select(PastExamPaperTemplate)
+        .where(
+            PastExamPaperTemplate.subject_code == subject_code,
+            PastExamPaperTemplate.syllabus_exam_year == syllabus_exam_year,
+        )
+        .order_by(PastExamPaperTemplate.reference_year.desc())
+        .limit(1)
+    ).scalar_one_or_none()
+
+
+def resolve_placement_paper_title(
+    db: Session, *, subject_code: str, student_user_id: uuid.UUID
+) -> str:
+    exam_year = resolve_student_exam_year(db, student_user_id)
+    template = load_paper_template(db, subject_code=subject_code, syllabus_exam_year=exam_year)
+    if template is not None:
+        return template.title
+    return f"{subject_code} 模拟摸底卷"
+
+
+def resolve_placement_question_count(
+    db: Session, *, subject_code: str, student_user_id: uuid.UUID
+) -> int:
+    ctx = build_placement_context(db, student_user_id=student_user_id, subject_code=subject_code)
+    return sum(int(section.get("count") or 0) for section in ctx.paper_sections)
+
+
+def syllabus_nodes_for_year(
+    db: Session, *, subject_code: str, exam_year: int
+) -> list[SyllabusNode]:
+    return list(
+        db.execute(
+            select(SyllabusNode)
+            .where(
+                SyllabusNode.subject_code == subject_code,
+                or_(SyllabusNode.exam_year.is_(None), SyllabusNode.exam_year == exam_year),
+            )
+            .order_by(SyllabusNode.name)
+        )
+        .scalars()
+        .all()
+    )
+
+
+def leaf_nodes_for_placement(
+    db: Session, *, subject_code: str, exam_year: int
+) -> list[SyllabusNode]:
+    nodes = syllabus_nodes_for_year(db, subject_code=subject_code, exam_year=exam_year)
+    if not nodes:
+        return []
+    parent_ids = {n.parent_id for n in nodes if n.parent_id is not None}
+    return [n for n in nodes if n.id not in parent_ids]
+
+
+def _build_syllabus_outline(nodes: list[SyllabusNode]) -> list[dict]:
+    by_id = {n.id: n for n in nodes}
+    outline: list[dict] = []
+    for node in nodes:
+        parent = by_id.get(node.parent_id) if node.parent_id else None
+        outline.append(
+            {
+                "id": str(node.id),
+                "name": node.name,
+                "parent_name": parent.name if parent else None,
+                "weight": node.weight,
+            }
+        )
+    return outline
+
+
+def load_past_exam_samples(
+    db: Session,
+    *,
+    subject_code: str,
+    syllabus_exam_year: int,
+    limit: int = PAST_EXAM_SAMPLE_LIMIT,
+) -> list[PastExamQuestion]:
+    return list(
+        db.execute(
+            select(PastExamQuestion)
+            .where(
+                PastExamQuestion.subject_code == subject_code,
+                PastExamQuestion.syllabus_exam_year == syllabus_exam_year,
+            )
+            .order_by(PastExamQuestion.source_year.desc(), PastExamQuestion.created_at.asc())
+            .limit(limit)
+        )
+        .scalars()
+        .all()
+    )
+
+
+def past_exam_sample_payload(
+    db: Session, samples: list[PastExamQuestion]
+) -> list[dict]:
+    out: list[dict] = []
+    for sample in samples:
+        node_name: str | None = None
+        if sample.knowledge_node_id is not None:
+            node = db.get(SyllabusNode, sample.knowledge_node_id)
+            if node is not None:
+                node_name = node.name
+        out.append(
+            {
+                "source_year": sample.source_year,
+                "q_type": sample.q_type,
+                "knowledge_node_id": str(sample.knowledge_node_id) if sample.knowledge_node_id else None,
+                "knowledge_node_name": node_name,
+                "stem": sample.stem,
+                "choices": sample.choices_json or [],
+                "answer_key": sample.answer_key,
+            }
+        )
+    return out
+
+
+def _resolve_node_for_area(
+    leaves: list[SyllabusNode],
+    knowledge_area: str | None,
+    *,
+    fallback_index: int,
+    weak_node_ids: set[uuid.UUID],
+) -> SyllabusNode:
+    by_name = {n.name: n for n in leaves}
+    if knowledge_area and knowledge_area in by_name:
+        return by_name[knowledge_area]
+    for node in leaves:
+        if node.id in weak_node_ids:
+            return node
+    return leaves[fallback_index % len(leaves)]
+
+
+def build_placement_slots(
+    db: Session,
+    context: PlacementGenContext,
+    leaves: list[SyllabusNode],
+    weak_nodes: list,
+) -> list[PlacementSlot]:
+    if not leaves:
+        return []
+
+    weak_ids = {
+        w.knowledge_node_id for w in weak_nodes if getattr(w, "knowledge_node_id", None) is not None
+    }
+    slots: list[PlacementSlot] = []
+    seq = 1
+    for section in context.paper_sections:
+        section_name = str(section.get("section_name") or "综合")
+        q_type = str(section.get("q_type") or "single_choice")
+        count = int(section.get("count") or 0)
+        knowledge_area = section.get("knowledge_area")
+        for section_index in range(1, count + 1):
+            node = _resolve_node_for_area(
+                leaves,
+                knowledge_area,
+                fallback_index=seq - 1,
+                weak_node_ids=weak_ids,
+            )
+            slots.append(
+                PlacementSlot(
+                    seq=seq,
+                    section_name=section_name,
+                    q_type=q_type,
+                    knowledge_node=node,
+                    section_index=section_index,
+                )
+            )
+            seq += 1
+    return slots
+
+
+def build_placement_context(
+    db: Session,
+    *,
+    student_user_id: uuid.UUID,
+    subject_code: str,
+) -> PlacementGenContext:
+    exam_year = resolve_student_exam_year(db, student_user_id)
+    nodes = syllabus_nodes_for_year(db, subject_code=subject_code, exam_year=exam_year)
+    samples = load_past_exam_samples(
+        db, subject_code=subject_code, syllabus_exam_year=exam_year
+    )
+    template = load_paper_template(db, subject_code=subject_code, syllabus_exam_year=exam_year)
+    if template is not None:
+        paper_title = template.title
+        reference_year = template.reference_year
+        paper_sections = list(template.sections_json or [])
+    else:
+        paper_title = f"{subject_code} 模拟摸底卷"
+        reference_year = None
+        paper_sections = list(DEFAULT_PLACEMENT_SECTIONS)
+
+    return PlacementGenContext(
+        exam_year=exam_year,
+        syllabus_outline=_build_syllabus_outline(nodes),
+        past_exam_samples=past_exam_sample_payload(db, samples),
+        paper_title=paper_title,
+        reference_year=reference_year,
+        paper_sections=paper_sections,
+    )
+
+
+def reference_year_for_node(
+    context: PlacementGenContext,
+    node_id: uuid.UUID,
+    *,
+    fallback_seq: int,
+) -> int | None:
+    if context.reference_year is not None:
+        return context.reference_year
+    node_key = str(node_id)
+    for sample in context.past_exam_samples:
+        if sample.get("knowledge_node_id") == node_key:
+            return int(sample["source_year"])
+    if context.past_exam_samples:
+        idx = (fallback_seq - 1) % len(context.past_exam_samples)
+        return int(context.past_exam_samples[idx]["source_year"])
+    return None

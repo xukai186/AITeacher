@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.models import PaperGenJob, PlacementPaper, PlacementQuestion, SelfTestPaper, SelfTestQuestion, User
 from app.services.paper_gen import DEFAULT_QUESTION_COUNT, PaperGenService, PaperPurpose
+from app.services.placement_paper_context import resolve_placement_question_count
 
 ProgressCallback = Callable[[int, int, str], None]
 
@@ -50,6 +51,12 @@ class PaperGenJobService:
         if existing is not None:
             return EnqueuePaperGenResult(job_id=existing.id, created=False)
 
+        total = DEFAULT_QUESTION_COUNT
+        if purpose == "placement":
+            total = resolve_placement_question_count(
+                db, subject_code=subject_code, student_user_id=student_user_id
+            )
+
         job = PaperGenJob(
             student_user_id=student_user_id,
             subject_code=subject_code,
@@ -61,7 +68,7 @@ class PaperGenJobService:
             run_after=datetime.now(timezone.utc),
             progress_json={
                 "done": 0,
-                "total": DEFAULT_QUESTION_COUNT,
+                "total": total,
                 "message": "等待生成…",
             },
         )
@@ -131,7 +138,7 @@ class PaperGenJobRunner:
         db.refresh(job)
 
         try:
-            self._execute_job(db, job)
+            generated_count = self._execute_job(db, job)
             db.execute(
                 update(PaperGenJob)
                 .where(PaperGenJob.id == job.id)
@@ -141,8 +148,8 @@ class PaperGenJobRunner:
                     attempts=job.attempts + 1,
                     last_error=None,
                     progress_json={
-                        "done": DEFAULT_QUESTION_COUNT,
-                        "total": DEFAULT_QUESTION_COUNT,
+                        "done": generated_count,
+                        "total": generated_count,
                         "message": "题目生成完成",
                     },
                     result_json={"paper_id": str(job.paper_id)},
@@ -165,13 +172,16 @@ class PaperGenJobRunner:
             self._mark_paper_failed(db, job)
         db.flush()
 
-    def _execute_job(self, db: Session, job: PaperGenJob) -> None:
+    def _execute_job(self, db: Session, job: PaperGenJob) -> int:
         student = db.get(User, job.student_user_id)
         if student is None:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "student not found")
 
-        purpose: PaperPurpose = "placement" if job.purpose == "placement" else "self_test"
         total = DEFAULT_QUESTION_COUNT
+        if job.purpose == "placement":
+            total = resolve_placement_question_count(
+                db, subject_code=job.subject_code, student_user_id=job.student_user_id
+            )
 
         def on_progress(done: int, total_batches: int, message: str) -> None:
             db.execute(
@@ -198,7 +208,7 @@ class PaperGenJobRunner:
                 org_id=student.org_id,
                 student_user_id=job.student_user_id,
                 subject_code=job.subject_code,
-                question_count=total,
+                question_count=None,
                 on_progress=on_progress,
             )
             if not generated:
@@ -217,7 +227,7 @@ class PaperGenJobRunner:
                     )
                 )
             paper.status = "ready"
-            return
+            return len(generated)
 
         if job.purpose == "self_test":
             paper = db.get(SelfTestPaper, job.paper_id)
@@ -248,7 +258,7 @@ class PaperGenJobRunner:
                     )
                 )
             paper.status = "ready"
-            return
+            return len(generated)
 
         raise ValueError(f"unsupported paper gen purpose: {job.purpose}")
 
