@@ -9,6 +9,13 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.services.agent_context import SubjectContext, get_subject_context
+from app.services.chat_paper_tools import explain_question
+from app.services.chat_plan_tools import (
+    get_weekly_calendar,
+    propose_master_plan,
+    propose_subject_plan,
+    request_plan_adjustment,
+)
 from app.services.plan_review import PlanReviewResult, PlanReviewService
 from app.services.self_test_eligibility import SelfTestEligibilityService
 from app.services.planner_context import (
@@ -272,6 +279,90 @@ class ChatToolExecutor:
                 }
 
             return {"error": "unsupported paper_type"}
+
+        if tool_name == "explain_question":
+            if agent_type != "subject":
+                return {"error": "explain_question is only available for subject agent"}
+            subject_code = default_subject_code
+            if not subject_code:
+                return {"error": "subject_code is required"}
+            paper_type = arguments.get("paper_type")
+            paper_id_raw = arguments.get("paper_id")
+            if not paper_type or not paper_id_raw:
+                return {"error": "paper_type and paper_id are required"}
+            try:
+                paper_id = uuid.UUID(str(paper_id_raw))
+            except Exception:
+                return {"error": "invalid paper_id"}
+            question_seq = arguments.get("question_seq")
+            question_id_raw = arguments.get("question_id")
+            question_id = None
+            if question_id_raw:
+                try:
+                    question_id = uuid.UUID(str(question_id_raw))
+                except Exception:
+                    return {"error": "invalid question_id"}
+            return explain_question(
+                db,
+                student_user_id=student_user_id,
+                subject_code=subject_code,
+                paper_type=str(paper_type),
+                paper_id=paper_id,
+                question_seq=int(question_seq) if question_seq is not None else None,
+                question_id=question_id,
+            )
+
+        if tool_name == "propose_subject_plan":
+            if agent_type != "subject":
+                return {"error": "propose_subject_plan is only available for subject agent"}
+            subject_code = default_subject_code
+            if not subject_code:
+                return {"error": "subject_code is required"}
+            phases = arguments.get("phases")
+            if not isinstance(phases, list):
+                return {"error": "phases must be a list"}
+            return propose_subject_plan(
+                db,
+                student_user_id=student_user_id,
+                subject_code=subject_code,
+                phases=phases,
+            )
+
+        if tool_name == "request_plan_adjustment":
+            if agent_type != "subject":
+                return {"error": "request_plan_adjustment is only available for subject agent"}
+            subject_code = default_subject_code
+            if not subject_code:
+                return {"error": "subject_code is required"}
+            target = _parse_target_date(arguments.get("target_date"))
+            return request_plan_adjustment(
+                db,
+                student_user_id=student_user_id,
+                subject_code=subject_code,
+                target_date=target,
+                reason=arguments.get("reason"),
+            )
+
+        if tool_name == "get_weekly_calendar":
+            if agent_type != "planner":
+                return {"error": "get_weekly_calendar is only available for planner agent"}
+            return get_weekly_calendar(db, student_user_id=student_user_id)
+
+        if tool_name == "propose_master_plan":
+            if agent_type != "planner":
+                return {"error": "propose_master_plan is only available for planner agent"}
+            target = _parse_target_date(arguments.get("target_date"))
+            daily_minutes = arguments.get("daily_minutes")
+            weekly_goals = arguments.get("weekly_goals")
+            if daily_minutes is None and weekly_goals is None:
+                return {"error": "daily_minutes or weekly_goals is required"}
+            return propose_master_plan(
+                db,
+                student_user_id=student_user_id,
+                daily_minutes=int(daily_minutes) if daily_minutes is not None else None,
+                target_date=target,
+                weekly_goals=weekly_goals if isinstance(weekly_goals, list) else None,
+            )
 
         return {"error": f"unknown tool: {tool_name}"}
 
