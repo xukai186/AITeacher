@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, UniqueConstraint, func
+from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -41,8 +41,9 @@ class PlacementQuestion(Base):
     q_type: Mapped[str] = mapped_column(String(40), nullable=False, default="single_choice")
     stem: Mapped[str] = mapped_column(String, nullable=False)
     choices_json: Mapped[list[dict] | None] = mapped_column(JSONB, nullable=True)
-    answer_key: Mapped[str] = mapped_column(String(40), nullable=False)
+    answer_key: Mapped[str] = mapped_column(Text, nullable=False, default="")
     points: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    rubric_json: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False

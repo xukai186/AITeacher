@@ -33,9 +33,14 @@ from app.services.planning import PlanningService
 from app.services.tasks import TaskGenerator
 from app.services.learning_events import LearningEventService
 from app.services.wrong_book import WrongBookService
-from app.services.paper_gen import DEFAULT_QUESTION_COUNT
+from app.services.paper_gen import DEFAULT_QUESTION_COUNT, PaperGenService, is_mock_placement_stem
 from app.services.paper_gen_jobs import PaperGenJobService
-from app.services.placement_paper_context import resolve_placement_paper_title
+from app.services.placement_grading import PlacementGradeableQuestion, grade_placement_answer
+from app.services.placement_paper_context import (
+    placement_questions_match_template,
+    resolve_placement_paper_title,
+    resolve_placement_question_count,
+)
 from app.seed_syllabus import seed_minimal_syllabus
 
 QUESTIONS_PER_SUBJECT = DEFAULT_QUESTION_COUNT
@@ -63,7 +68,7 @@ class PlacementService:
         return "请选择最符合考纲要求的选项" in stem and "摸底·" not in stem
 
     @classmethod
-    def _needs_regeneration(cls, db: Session, paper_id: uuid.UUID) -> bool:
+    def _needs_regeneration(cls, db: Session, paper_id: uuid.UUID, student_user_id: uuid.UUID) -> bool:
         questions = list(
             db.execute(
                 select(PlacementQuestion).where(PlacementQuestion.paper_id == paper_id)
@@ -73,6 +78,27 @@ class PlacementService:
         )
         if not questions:
             return True
+        paper = db.get(PlacementPaper, paper_id)
+        if paper is None:
+            return True
+        expected = resolve_placement_question_count(
+            db, subject_code=paper.subject_code, student_user_id=student_user_id
+        )
+        if len(questions) != expected:
+            return True
+        if not placement_questions_match_template(
+            db,
+            student_user_id=student_user_id,
+            subject_code=paper.subject_code,
+            questions=questions,
+        ):
+            return True
+        student = db.get(User, student_user_id)
+        if student is not None:
+            policy = PaperGenService()._policy(db, student.org_id)
+            if policy is not None and policy.provider not in (None, "mock"):
+                if any(is_mock_placement_stem(q.stem) for q in questions):
+                    return True
         return all(cls._legacy_template_stem(q.stem) for q in questions)
 
     @classmethod
@@ -102,7 +128,10 @@ class PlacementService:
         if paper is not None and cls._is_submitted(db, paper.id, student_user_id):
             return paper, None
 
-        if paper is not None and not cls._needs_regeneration(db, paper.id):
+        if paper is not None and paper.status == "failed":
+            paper.status = "generating"
+
+        if paper is not None and not cls._needs_regeneration(db, paper.id, student_user_id):
             paper.status = "ready"
             return paper, None
 
@@ -311,6 +340,10 @@ class PlacementService:
         if cls._is_submitted(db, paper_id, student_user_id):
             raise HTTPException(status.HTTP_400_BAD_REQUEST, "placement already submitted")
 
+        student = db.get(User, student_user_id)
+        if student is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "student not found")
+
         submission = PlacementSubmission(
             paper_id=paper_id,
             student_user_id=student_user_id,
@@ -326,8 +359,19 @@ class PlacementService:
             q = questions.get(ans.question_id)
             if q is None:
                 raise HTTPException(status.HTTP_400_BAD_REQUEST, "invalid question_id")
-            is_correct = ans.content.strip() == (q.answer_key or "")
-            score = q.points if is_correct else 0
+            gradeable = PlacementGradeableQuestion(
+                q_type=q.q_type,
+                stem=q.stem,
+                answer_key=q.answer_key or "",
+                points=q.points,
+                rubric_json=q.rubric_json,
+            )
+            score, is_correct, _detail = grade_placement_answer(
+                db,
+                org_id=student.org_id,
+                question=gradeable,
+                content=ans.content,
+            )
             total_score += score
 
             db.add(
@@ -413,11 +457,13 @@ class PlacementService:
     @staticmethod
     def _question_out(question: PlacementQuestion) -> PlacementQuestionOut:
         choices_raw = question.choices_json or []
+        hide_key = question.q_type in ("short_answer", "essay")
         return PlacementQuestionOut(
             id=question.id,
             seq=question.seq,
             q_type=question.q_type,
             stem=question.stem,
             choices=choices_raw,
-            answer_key=question.answer_key,
+            answer_key=None if hide_key else question.answer_key,
+            points=question.points,
         )

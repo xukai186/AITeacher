@@ -52,6 +52,10 @@ def _sync_test_schema(connection, *, commit: bool = False) -> None:
         sn_cols = {c["name"] for c in insp.get_columns("syllabus_nodes")}
         if "exam_year" not in sn_cols:
             connection.execute(text("ALTER TABLE syllabus_nodes ADD COLUMN exam_year INTEGER NULL"))
+    if "placement_questions" in insp.get_table_names():
+        pq_cols = {c["name"] for c in insp.get_columns("placement_questions")}
+        if "rubric_json" not in pq_cols:
+            connection.execute(text("ALTER TABLE placement_questions ADD COLUMN rubric_json JSONB NULL"))
     if commit:
         connection.commit()
 

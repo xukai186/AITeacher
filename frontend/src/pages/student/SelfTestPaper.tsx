@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useNavigate, useParams } from "react-router-dom";
 import PaperGeneratingView from "@/components/PaperGeneratingView";
+import MathText from "@/components/MathText";
 import { getSelfTestPaper, submitSelfTest, type SelfTestQuestionOut } from "@/api/selfTests";
 import { useWaitForPaperGeneration } from "@/hooks/useWaitForPaperGeneration";
 
@@ -88,7 +89,7 @@ export default function SelfTestPaper() {
         {questions.map((q) => (
           <div key={q.id} className="border rounded p-4 space-y-2">
             <div className="font-medium">
-              {q.seq}. {q.stem}
+              {q.seq}. <MathText text={q.stem} />
             </div>
             <div className="grid grid-cols-2 gap-2">
               {q.choices.map((c) => (
@@ -101,7 +102,7 @@ export default function SelfTestPaper() {
                     onChange={(e) => setAnswers((prev) => ({ ...prev, [q.id]: e.target.value }))}
                   />
                   <span>
-                    {c.key}. {c.text}
+                    {c.key}. <MathText text={c.text} />
                   </span>
                 </label>
               ))}

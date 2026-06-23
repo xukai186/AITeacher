@@ -48,10 +48,12 @@ alembic upgrade head
 
 环境变量（与 API 相同，前缀 `AITEACHER_`）：
 
-| 变量 | 说明 |
-|------|------|
+
+| 变量                       | 说明                                                             |
+| ------------------------ | -------------------------------------------------------------- |
 | `AITEACHER_DATABASE_URL` | 生产库连接串，例如 `postgresql+psycopg://user:pass@host:5432/aiteacher` |
-| `AITEACHER_JWT_SECRET` | Worker 不校验 JWT，但保持 `.env` 一致便于运维 |
+| `AITEACHER_JWT_SECRET`   | Worker 不校验 JWT，但保持 `.env` 一致便于运维                               |
+
 
 在 `backend/` 目录放置 `.env`，或 systemd `EnvironmentFile` 指向该文件。
 
@@ -67,11 +69,13 @@ source .venv/bin/activate
 python -m app.jobs.run_plan_review_jobs --once
 ```
 
-| 参数 | 默认 | 说明 |
-|------|------|------|
-| `--once` | 否 | 处理一批后退出（适合 cron）；省略则常驻循环 |
-| `--limit` | 50 | 每批最多处理 job 数 |
-| `--sleep` | 1.0 | 常驻模式下无任务时的休眠秒数 |
+
+| 参数        | 默认  | 说明                       |
+| --------- | --- | ------------------------ |
+| `--once`  | 否   | 处理一批后退出（适合 cron）；省略则常驻循环 |
+| `--limit` | 50  | 每批最多处理 job 数             |
+| `--sleep` | 1.0 | 常驻模式下无任务时的休眠秒数           |
+
 
 **建议频率：** 每分钟执行一次 `--once`（生产常见做法）。
 
@@ -85,11 +89,13 @@ source .venv/bin/activate
 python -m app.jobs.run_paper_gen_jobs --once
 ```
 
-| 参数 | 默认 | 说明 |
-|------|------|------|
-| `--once` | 否 | 处理一批后退出（适合 cron）；省略则常驻循环 |
-| `--limit` | 20 | 每批最多处理 job 数 |
-| `--sleep` | 1.0 | 常驻模式下无任务时的休眠秒数 |
+
+| 参数        | 默认  | 说明                       |
+| --------- | --- | ------------------------ |
+| `--once`  | 否   | 处理一批后退出（适合 cron）；省略则常驻循环 |
+| `--limit` | 20  | 每批最多处理 job 数             |
+| `--sleep` | 1.0 | 常驻模式下无任务时的休眠秒数           |
+
 
 **建议频率：** 每分钟执行一次 `--once`。
 
@@ -266,18 +272,21 @@ python -m app.jobs.run_paper_gen_jobs --once --limit 10
 
 ## 与 API 行为对照
 
-| 路径 | 同步 / 异步入队 |
-|------|-----------------|
-| 对话内 `generate_daily_tasks` | 同步执行 PlanReview |
+
+| 路径                                          | 同步 / 异步入队               |
+| ------------------------------------------- | ----------------------- |
+| 对话内 `generate_daily_tasks`                  | 同步执行 PlanReview         |
 | `POST /student/agent/apply-recommendations` | 异步入队 `plan_review_jobs` |
-| 摸底 / 自测提交 | 异步入队 `plan_review_jobs` |
-| `daily_task_generation` cron | 异步入队 `plan_review_jobs` |
-| `POST /student/placement/start` | 异步入队 `paper_gen_jobs` |
-| `POST /student/self-tests/generate` | 异步入队 `paper_gen_jobs` |
-| `GET /student/paper-gen-jobs/{id}` | 轮询；开发环境内联消费当前 job |
+| 摸底 / 自测提交                                   | 异步入队 `plan_review_jobs` |
+| `daily_task_generation` cron                | 异步入队 `plan_review_jobs` |
+| `POST /student/placement/start`             | 异步入队 `paper_gen_jobs`   |
+| `POST /student/self-tests/generate`         | 异步入队 `paper_gen_jobs`   |
+| `GET /student/paper-gen-jobs/{id}`          | 轮询；开发环境内联消费当前 job       |
+
 
 ## 相关文档
 
 - [P8 异步入队计划](../superpowers/plans/2026-06-01-p8-async-enqueue-only.md)
 - [P7 每日定时入队](../superpowers/plans/2026-05-29-p7-scheduler-planner-ui.md)
 - 实现：`backend/app/jobs/run_plan_review_jobs.py`、`backend/app/jobs/run_paper_gen_jobs.py`、`backend/app/jobs/daily_task_generation.py`
+

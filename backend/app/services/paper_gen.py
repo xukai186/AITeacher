@@ -26,9 +26,14 @@ from app.services.model_gateway import ModelGateway, ModelGatewayRequest
 CHOICE_KEYS = ("A", "B", "C", "D")
 DEFAULT_QUESTION_COUNT = 10
 LLM_BATCH_SIZE = 3
-PAPER_GEN_TIMEOUT = httpx.Timeout(120.0, connect=10.0)
+PAPER_GEN_TIMEOUT = httpx.Timeout(180.0, connect=15.0)
 PaperPurpose = Literal["self_test", "placement"]
 ProgressCallback = Callable[[int, int, str], None]
+MOCK_PLACEMENT_STEM_PREFIX = "【模拟摸底·"
+
+
+def is_mock_placement_stem(stem: str) -> bool:
+    return stem.startswith(MOCK_PLACEMENT_STEM_PREFIX)
 
 
 @dataclass(frozen=True)
@@ -37,9 +42,10 @@ class GeneratedQuestion:
     knowledge_node_id: uuid.UUID | None
     q_type: str
     stem: str
-    choices_json: list[dict]
+    choices_json: list[dict] | None
     answer_key: str
     points: int
+    rubric_json: dict | None = None
 
 
 class PaperGenService:
@@ -159,18 +165,7 @@ class PaperGenService:
                 placement_context=placement_context,
                 on_progress=on_progress,
             )
-            if batched:
-                return batched
-
-            out = self._deterministic_questions_from_slots(
-                student_user_id,
-                subject_code,
-                placement_slots,
-                placement_context=placement_context,
-            )
-            if on_progress:
-                on_progress(len(out), question_count, f"已生成 {len(out)}/{question_count} 题")
-            return out
+            return batched
 
         if policy is None or policy.provider == "mock":
             out = self._mock_questions(
@@ -209,6 +204,93 @@ class PaperGenService:
             on_progress(len(out), question_count, f"已生成 {len(out)}/{question_count} 题")
         return out
 
+    def generate_prepared_placement(
+        self,
+        *,
+        provider: str | None,
+        model: str | None,
+        params: dict | None,
+        placement_context: PlacementGenContext,
+        placement_slots: list[PlacementSlot],
+        student_user_id: uuid.UUID,
+        subject_code: str,
+        on_progress: ProgressCallback | None = None,
+    ) -> list[GeneratedQuestion]:
+        question_count = len(placement_slots)
+        if question_count == 0:
+            raise ValueError("placement paper template has no questions")
+
+        if provider is None or provider == "mock":
+            out = self._mock_questions_from_slots(
+                student_user_id,
+                subject_code,
+                placement_slots,
+                placement_context=placement_context,
+            )
+            if on_progress:
+                on_progress(len(out), question_count, f"已生成 {len(out)}/{question_count} 题")
+            return out
+
+        return self._generate_with_llm_batches_from_slots(
+            provider,
+            model or "",
+            params or {},
+            student_user_id=student_user_id,
+            subject_code=subject_code,
+            slots=placement_slots,
+            placement_context=placement_context,
+            on_progress=on_progress,
+        )
+
+    def generate_prepared_self_test(
+        self,
+        *,
+        provider: str | None,
+        model: str | None,
+        params: dict | None,
+        target_nodes: list[SyllabusNode],
+        student_user_id: uuid.UUID,
+        subject_code: str,
+        question_count: int,
+        on_progress: ProgressCallback | None = None,
+    ) -> list[GeneratedQuestion]:
+        if provider is None or provider == "mock":
+            out = self._mock_questions(
+                student_user_id,
+                subject_code,
+                target_nodes,
+                question_count,
+                purpose="self_test",
+            )
+            if on_progress:
+                on_progress(len(out), question_count, f"已生成 {len(out)}/{question_count} 题")
+            return out
+
+        batched = self._generate_with_llm_batches(
+            provider,
+            model or "",
+            params or {},
+            student_user_id=student_user_id,
+            subject_code=subject_code,
+            target_nodes=target_nodes,
+            question_count=question_count,
+            purpose="self_test",
+            on_progress=on_progress,
+        )
+        if batched:
+            return batched
+
+        out = self._deterministic_questions(
+            student_user_id,
+            subject_code,
+            target_nodes,
+            question_count,
+            purpose="self_test",
+        )
+        if on_progress:
+            on_progress(len(out), question_count, f"已生成 {len(out)}/{question_count} 题")
+        return out
+
     def _generate_with_llm_batches_from_slots(
         self,
         provider: str,
@@ -227,31 +309,16 @@ class PaperGenService:
         while seq <= question_count:
             batch_count = min(LLM_BATCH_SIZE, question_count - seq + 1)
             batch_slots = slots[seq - 1 : seq - 1 + batch_count]
-            batch: list[GeneratedQuestion] = []
-            try:
-                raw = self._call_llm_for_slots(
-                    provider,
-                    model,
-                    params,
-                    subject_code=subject_code,
-                    slots=batch_slots,
-                    placement_context=placement_context,
-                )
-                parsed = self._parse_llm_questions_for_slots(raw, slots=batch_slots)
-                if parsed:
-                    batch = parsed
-            except Exception:
-                batch = []
+            batch = self._llm_questions_for_slot_batch(
+                provider,
+                model,
+                params,
+                subject_code=subject_code,
+                batch_slots=batch_slots,
+                placement_context=placement_context,
+            )
 
-            if not batch:
-                batch = self._deterministic_questions_from_slots(
-                    student_user_id,
-                    subject_code,
-                    batch_slots,
-                    placement_context=placement_context,
-                )
-
-            for item in batch[:batch_count]:
+            for item in batch:
                 out.append(
                     GeneratedQuestion(
                         seq=seq,
@@ -261,6 +328,7 @@ class PaperGenService:
                         choices_json=item.choices_json,
                         answer_key=item.answer_key,
                         points=item.points,
+                        rubric_json=item.rubric_json,
                     )
                 )
                 seq += 1
@@ -271,6 +339,83 @@ class PaperGenService:
                     f"已生成 {min(seq - 1, question_count)}/{question_count} 题",
                 )
         return out
+
+    def _llm_questions_for_slot_batch(
+        self,
+        provider: str,
+        model: str,
+        params: dict,
+        *,
+        subject_code: str,
+        batch_slots: list[PlacementSlot],
+        placement_context: PlacementGenContext,
+    ) -> list[GeneratedQuestion]:
+        parsed: list[GeneratedQuestion] = []
+        batch_error: str | None = None
+        try:
+            raw = self._call_llm_for_slots(
+                provider,
+                model,
+                params,
+                subject_code=subject_code,
+                slots=batch_slots,
+                placement_context=placement_context,
+            )
+            maybe = self._parse_llm_questions_for_slots(raw, slots=batch_slots)
+            if maybe:
+                parsed = maybe
+            else:
+                batch_error = "LLM response could not be parsed"
+        except Exception as exc:  # noqa: BLE001
+            batch_error = str(exc)
+            parsed = []
+
+        if len(parsed) < len(batch_slots):
+            for slot in batch_slots[len(parsed) :]:
+                single, single_error = self._llm_question_for_single_slot(
+                    provider,
+                    model,
+                    params,
+                    subject_code=subject_code,
+                    slot=slot,
+                    placement_context=placement_context,
+                )
+                if single is None:
+                    detail = single_error or batch_error or "unknown error"
+                    raise ValueError(
+                        f"LLM failed to generate placement question seq={slot.seq}: {detail}"
+                    )
+                parsed.append(single)
+        return parsed
+
+    def _llm_question_for_single_slot(
+        self,
+        provider: str,
+        model: str,
+        params: dict,
+        *,
+        subject_code: str,
+        slot: PlacementSlot,
+        placement_context: PlacementGenContext,
+    ) -> tuple[GeneratedQuestion | None, str | None]:
+        last_error: str | None = None
+        for _ in range(2):
+            try:
+                raw = self._call_llm_for_slots(
+                    provider,
+                    model,
+                    params,
+                    subject_code=subject_code,
+                    slots=[slot],
+                    placement_context=placement_context,
+                )
+                parsed = self._parse_llm_questions_for_slots(raw, slots=[slot])
+                if parsed:
+                    return parsed[0], None
+                last_error = "LLM response could not be parsed"
+            except Exception as exc:  # noqa: BLE001
+                last_error = str(exc)
+        return None, last_error
 
     def _generate_with_llm_batches(
         self,
@@ -401,6 +546,40 @@ class PaperGenService:
             return "模拟摸底卷"
         return "自测卷"
 
+    def _schema_example_for_slot(self, slot: PlacementSlot) -> dict:
+        base: dict = {
+            "seq": slot.seq,
+            "knowledge_node_id": str(slot.knowledge_node.id),
+            "q_type": slot.q_type,
+            "stem": "<完整题干，考生可直接作答>",
+            "points": slot.points,
+        }
+        if slot.q_type == "multi_choice":
+            base["choices"] = [
+                {"key": "A", "text": "<选项>"},
+                {"key": "B", "text": "<选项>"},
+                {"key": "C", "text": "<选项>"},
+                {"key": "D", "text": "<选项>"},
+            ]
+            base["answer_key"] = "AB"
+        elif slot.q_type == "single_choice":
+            base["choices"] = [
+                {"key": "A", "text": "<选项>"},
+                {"key": "B", "text": "<选项>"},
+                {"key": "C", "text": "<选项>"},
+                {"key": "D", "text": "<选项>"},
+            ]
+            base["answer_key"] = "A"
+        elif slot.q_type == "fill_blank":
+            base["answer_key"] = "<填空标准答案>"
+        elif slot.q_type in ("short_answer", "essay"):
+            base["answer_key"] = ""
+            base["rubric_json"] = {
+                "reference_answer": "<参考要点>",
+                "keywords": ["<关键词>"],
+            }
+        return base
+
     def _call_llm_for_slots(
         self,
         provider: str,
@@ -428,6 +607,8 @@ class PaperGenService:
             f"科目代码：{subject_code}",
             f"考生目标考试年份：{placement_context.exam_year}",
             "请按往年真题卷的题型与题量结构出题，严格依据当年考试大纲，可参考往年真题风格但须原创题干。",
+            "题干必须是完整、可独立作答的题目正文；禁止写「参照某年卷第几题」「卷面第几题」「请填写正确答案」等元数据或占位语。",
+            "数学公式使用 LaTeX，并用 $...$ 包裹行内公式（例如 $\\theta$、$X_1$、$x^{\\theta-1}$）；分段函数可用 \\begin{cases}...\\end{cases}。",
             "当年考试大纲：",
             json.dumps(placement_context.syllabus_outline, ensure_ascii=False),
             "往年真题卷结构（题型与题量）：",
@@ -447,24 +628,7 @@ class PaperGenService:
                 "",
                 "只输出 STRICT JSON，不要 markdown：",
                 json.dumps(
-                    {
-                        "questions": [
-                            {
-                                "seq": 1,
-                                "knowledge_node_id": "<uuid>",
-                                "q_type": "single_choice",
-                                "stem": "<题干>",
-                                "choices": [
-                                    {"key": "A", "text": "<选项>"},
-                                    {"key": "B", "text": "<选项>"},
-                                    {"key": "C", "text": "<选项>"},
-                                    {"key": "D", "text": "<选项>"},
-                                ],
-                                "answer_key": "A",
-                                "points": 1,
-                            }
-                        ]
-                    },
+                    {"questions": [self._schema_example_for_slot(slot) for slot in slots]},
                     ensure_ascii=False,
                 ),
             ]
@@ -542,6 +706,97 @@ class PaperGenService:
         )
         return resp.text
 
+    @staticmethod
+    def _extract_json_payload(raw: str) -> dict:
+        text = raw.strip()
+        if text.startswith("```"):
+            text = text.strip("`")
+            if text.lower().startswith("json"):
+                text = text[4:].strip()
+        data = json.loads(text)
+        if not isinstance(data, dict):
+            raise ValueError("LLM response must be a JSON object")
+        return data
+
+    def _parse_llm_question_item(
+        self,
+        item: dict,
+        *,
+        slot: PlacementSlot,
+        allowed_ids: set[uuid.UUID],
+    ) -> GeneratedQuestion | None:
+        stem = str(item.get("stem") or "").strip()
+        if not stem:
+            return None
+
+        node_raw = item.get("knowledge_node_id")
+        node_id: uuid.UUID | None = None
+        if node_raw:
+            try:
+                node_id = uuid.UUID(str(node_raw))
+            except ValueError:
+                node_id = None
+        if node_id is None or node_id not in allowed_ids:
+            node_id = slot.knowledge_node.id
+
+        q_type = slot.q_type
+        if q_type in ("single_choice", "multi_choice"):
+            choices = item.get("choices") or []
+            if not choices:
+                return None
+            answer_key = str(item.get("answer_key") or "A").strip().upper()
+            if q_type == "single_choice" and answer_key not in CHOICE_KEYS:
+                answer_key = "A"
+            choices_json = [
+                {"key": str(c.get("key")), "text": str(c.get("text") or "")}
+                for c in choices
+                if c.get("key")
+            ]
+            return GeneratedQuestion(
+                seq=slot.seq,
+                knowledge_node_id=node_id,
+                q_type=q_type,
+                stem=stem,
+                choices_json=choices_json,
+                answer_key=answer_key,
+                points=slot.points,
+                rubric_json=None,
+            )
+
+        if q_type == "fill_blank":
+            answer_key = str(item.get("answer_key") or "").strip()
+            if not answer_key:
+                return None
+            return GeneratedQuestion(
+                seq=slot.seq,
+                knowledge_node_id=node_id,
+                q_type=q_type,
+                stem=stem,
+                choices_json=None,
+                answer_key=answer_key,
+                points=slot.points,
+                rubric_json=None,
+            )
+
+        if q_type in ("short_answer", "essay"):
+            rubric_raw = item.get("rubric_json") or item.get("rubric")
+            rubric_json = rubric_raw if isinstance(rubric_raw, dict) else {
+                "reference_answer": str(item.get("answer_key") or stem),
+                "keywords": [slot.knowledge_node.name, slot.section_name],
+            }
+            return GeneratedQuestion(
+                seq=slot.seq,
+                knowledge_node_id=node_id,
+                q_type=q_type,
+                stem=stem,
+                choices_json=None,
+                answer_key=str(item.get("answer_key") or "").strip(),
+                points=slot.points,
+                rubric_json=rubric_json,
+            )
+
+        return None
+
     def _parse_llm_questions(
         self,
         raw: str,
@@ -604,26 +859,25 @@ class PaperGenService:
         *,
         slots: list[PlacementSlot],
     ) -> list[GeneratedQuestion]:
-        target_nodes = [slot.knowledge_node for slot in slots]
-        parsed = self._parse_llm_questions(
-            raw, target_nodes=target_nodes, question_count=len(slots)
-        )
-        if not parsed:
+        try:
+            data = self._extract_json_payload(raw)
+        except (json.JSONDecodeError, ValueError):
             return []
+        items = data.get("questions") or []
+        if not isinstance(items, list) or not items:
+            return []
+
+        allowed_ids = {slot.knowledge_node.id for slot in slots}
         out: list[GeneratedQuestion] = []
-        for idx, item in enumerate(parsed):
-            slot = slots[idx]
-            out.append(
-                GeneratedQuestion(
-                    seq=slot.seq,
-                    knowledge_node_id=item.knowledge_node_id,
-                    q_type=slot.q_type,
-                    stem=item.stem,
-                    choices_json=item.choices_json,
-                    answer_key=item.answer_key,
-                    points=item.points,
-                )
+        for idx, slot in enumerate(slots):
+            if idx >= len(items) or not isinstance(items[idx], dict):
+                break
+            parsed = self._parse_llm_question_item(
+                items[idx], slot=slot, allowed_ids=allowed_ids
             )
+            if parsed is None:
+                return []
+            out.append(parsed)
         return out
 
     @staticmethod
@@ -662,10 +916,60 @@ class PaperGenService:
             placement_context,
             slot.knowledge_node.id,
         )
-        type_hint = "（多选）" if slot.q_type == "multiple_choice" else ""
+        type_hint = "（多选）" if slot.q_type == "multi_choice" else ""
+        if slot.q_type == "fill_blank":
+            prompt = f"请填写正确答案（卷面第{slot.seq}题）"
+        elif slot.q_type in ("short_answer", "essay"):
+            prompt = f"请作答（卷面第{slot.seq}题，满分{slot.points}分）"
+        else:
+            prompt = f"请选择最符合考纲要求的选项（卷面第{slot.seq}题）"
         return (
-            f"{prefix}{type_hint}第{slot.section_index}题："
-            f"请选择最符合考纲要求的选项（卷面第{slot.seq}题）"
+            f"{prefix}{type_hint}第{slot.section_index}题：{prompt}"
+        )
+
+    def _mock_payload_for_slot(
+        self,
+        student_user_id: uuid.UUID,
+        subject_code: str,
+        slot: PlacementSlot,
+        *,
+        placement_context: PlacementGenContext | None,
+    ) -> tuple[str, list[dict] | None, str, dict | None]:
+        node = slot.knowledge_node
+        key = self._answer_key(student_user_id, subject_code, slot.seq)
+        if slot.q_type == "fill_blank":
+            return (
+                self._mock_stem_for_slot(slot, placement_context=placement_context),
+                None,
+                key,
+                None,
+            )
+        if slot.q_type in ("short_answer", "essay"):
+            rubric = {
+                "reference_answer": f"{node.name}相关参考要点",
+                "keywords": [node.name, slot.section_name],
+            }
+            return (
+                self._mock_stem_for_slot(slot, placement_context=placement_context),
+                None,
+                "",
+                rubric,
+            )
+        if slot.q_type == "multi_choice":
+            choices = [{"key": k, "text": f"{node.name}相关表述 {k}"} for k in CHOICE_KEYS]
+            multi_key = "".join(sorted({key, CHOICE_KEYS[(CHOICE_KEYS.index(key) + 1) % len(CHOICE_KEYS)]}))
+            return (
+                self._mock_stem_for_slot(slot, placement_context=placement_context),
+                choices,
+                multi_key,
+                None,
+            )
+        choices = [{"key": k, "text": f"{node.name}相关表述 {k}"} for k in CHOICE_KEYS]
+        return (
+            self._mock_stem_for_slot(slot, placement_context=placement_context),
+            choices,
+            key,
+            None,
         )
 
     def _mock_questions_from_slots(
@@ -678,18 +982,19 @@ class PaperGenService:
     ) -> list[GeneratedQuestion]:
         out: list[GeneratedQuestion] = []
         for slot in slots:
-            node = slot.knowledge_node
-            key = self._answer_key(student_user_id, subject_code, slot.seq)
-            choices = [{"key": k, "text": f"{node.name}相关表述 {k}"} for k in CHOICE_KEYS]
+            stem, choices, key, rubric = self._mock_payload_for_slot(
+                student_user_id, subject_code, slot, placement_context=placement_context
+            )
             out.append(
                 GeneratedQuestion(
                     seq=slot.seq,
-                    knowledge_node_id=node.id,
+                    knowledge_node_id=slot.knowledge_node.id,
                     q_type=slot.q_type,
-                    stem=self._mock_stem_for_slot(slot, placement_context=placement_context),
+                    stem=stem,
                     choices_json=choices,
                     answer_key=key,
-                    points=1,
+                    points=slot.points,
+                    rubric_json=rubric,
                 )
             )
         return out
@@ -704,18 +1009,19 @@ class PaperGenService:
     ) -> list[GeneratedQuestion]:
         out: list[GeneratedQuestion] = []
         for slot in slots:
-            node = slot.knowledge_node
-            key = self._answer_key(student_user_id, subject_code, slot.seq)
-            choices = [{"key": k, "text": f"{node.name} — 选项{k}"} for k in CHOICE_KEYS]
+            stem, choices, key, rubric = self._mock_payload_for_slot(
+                student_user_id, subject_code, slot, placement_context=placement_context
+            )
             out.append(
                 GeneratedQuestion(
                     seq=slot.seq,
-                    knowledge_node_id=node.id,
+                    knowledge_node_id=slot.knowledge_node.id,
                     q_type=slot.q_type,
-                    stem=self._mock_stem_for_slot(slot, placement_context=placement_context),
+                    stem=stem,
                     choices_json=choices,
                     answer_key=key,
-                    points=1,
+                    points=slot.points,
+                    rubric_json=rubric,
                 )
             )
         return out

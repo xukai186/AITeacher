@@ -15,7 +15,8 @@ from app.schemas.placement import (
     PlacementSubmitOut,
 )
 from app.services.placement import PlacementService
-from app.services.paper_gen_jobs import kick_paper_gen_job
+from app.services.paper_gen_jobs import PaperGenJobService, kick_paper_gen_job, should_kick_paper_gen_job
+from app.models import PlacementPaper
 
 router = APIRouter(prefix="/student/placement", tags=["student-placement"])
 
@@ -45,9 +46,21 @@ def list_placement_papers(
 @router.get("/{paper_id}", response_model=PlacementPaperDetail)
 def get_placement_paper(
     paper_id: uuid.UUID,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     student: User = Depends(require_roles(UserRole.student)),
 ) -> PlacementPaperDetail:
+    paper = db.get(PlacementPaper, paper_id)
+    if (
+        paper is not None
+        and paper.student_user_id == student.id
+        and paper.status == "generating"
+    ):
+        active = PaperGenJobService().get_active_for_paper(
+            db, paper_id=paper.id, purpose="placement"
+        )
+        if active is not None and should_kick_paper_gen_job(active):
+            background_tasks.add_task(kick_paper_gen_job, active.id)
     return PlacementService.get_paper(db, student.id, paper_id)
 
 

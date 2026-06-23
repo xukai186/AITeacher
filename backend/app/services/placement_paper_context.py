@@ -11,7 +11,13 @@ from app.models import PastExamPaperTemplate, PastExamQuestion, StudentProfile, 
 DEFAULT_EXAM_YEAR = 2027
 PAST_EXAM_SAMPLE_LIMIT = 5
 DEFAULT_PLACEMENT_SECTIONS = [
-    {"section_name": "综合", "q_type": "single_choice", "count": 10, "knowledge_area": None},
+    {
+        "section_name": "综合",
+        "q_type": "single_choice",
+        "count": 10,
+        "knowledge_area": None,
+        "points": 1,
+    },
 ]
 
 
@@ -22,6 +28,43 @@ class PlacementSlot:
     q_type: str
     knowledge_node: SyllabusNode
     section_index: int
+    points: int
+
+
+def materialize_placement_slots(slots: list[PlacementSlot]) -> list[PlacementSlot]:
+    """Copy slots with detached SyllabusNode rows safe to use after Session close."""
+    out: list[PlacementSlot] = []
+    for slot in slots:
+        node = slot.knowledge_node
+        detached_node = SyllabusNode(
+            id=node.id,
+            subject_code=node.subject_code,
+            name=node.name,
+            parent_id=node.parent_id,
+        )
+        out.append(
+            PlacementSlot(
+                seq=slot.seq,
+                section_name=slot.section_name,
+                q_type=slot.q_type,
+                knowledge_node=detached_node,
+                section_index=slot.section_index,
+                points=slot.points,
+            )
+        )
+    return out
+
+
+def materialize_syllabus_nodes(nodes: list[SyllabusNode]) -> list[SyllabusNode]:
+    return [
+        SyllabusNode(
+            id=node.id,
+            subject_code=node.subject_code,
+            name=node.name,
+            parent_id=node.parent_id,
+        )
+        for node in nodes
+    ]
 
 
 @dataclass(frozen=True)
@@ -196,6 +239,7 @@ def build_placement_slots(
         q_type = str(section.get("q_type") or "single_choice")
         count = int(section.get("count") or 0)
         knowledge_area = section.get("knowledge_area")
+        points = int(section.get("points") or 1)
         for section_index in range(1, count + 1):
             node = _resolve_node_for_area(
                 leaves,
@@ -210,10 +254,36 @@ def build_placement_slots(
                     q_type=q_type,
                     knowledge_node=node,
                     section_index=section_index,
+                    points=points,
                 )
             )
             seq += 1
     return slots
+
+
+def placement_questions_match_template(
+    db: Session,
+    *,
+    student_user_id: uuid.UUID,
+    subject_code: str,
+    questions: list,
+) -> bool:
+    ctx = build_placement_context(
+        db, student_user_id=student_user_id, subject_code=subject_code
+    )
+    leaves = leaf_nodes_for_placement(
+        db, subject_code=subject_code, exam_year=ctx.exam_year
+    )
+    if not leaves:
+        return False
+    slots = build_placement_slots(db, ctx, leaves, [])
+    ordered = sorted(questions, key=lambda q: q.seq)
+    if len(ordered) != len(slots):
+        return False
+    for question, slot in zip(ordered, slots):
+        if question.q_type != slot.q_type or question.points != slot.points:
+            return False
+    return True
 
 
 def build_placement_context(
