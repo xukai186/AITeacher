@@ -16,8 +16,9 @@ class PlacementQuestionOut(BaseModel):
     seq: int
     q_type: str
     stem: str
-    choices: list[PlacementChoiceOut]
+    choices: list[PlacementChoiceOut] = Field(default_factory=list)
     answer_key: str | None = None
+    points: int = 1
 
 
 class PlacementPaperSummary(BaseModel):
@@ -52,7 +53,7 @@ class PlacementStartOut(BaseModel):
 
 class PlacementAnswerIn(BaseModel):
     question_id: uuid.UUID
-    content: str = Field(min_length=1, max_length=500)
+    content: str = Field(min_length=1, max_length=10000)
 
 
 class PlacementSubmitIn(BaseModel):

@@ -1,14 +1,18 @@
 import uuid
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.auth.permissions import require_roles
 from app.database import get_db
 from app.models import PaperGenJob, User, UserRole
 from app.schemas.paper_gen_job import PaperGenJobOut, PaperGenJobProgress
-from app.services.paper_gen_jobs import PaperGenJobRunner, PaperGenJobService
+from app.services.paper_gen_jobs import (
+    PaperGenJobService,
+    kick_paper_gen_job,
+    should_kick_paper_gen_job,
+)
 
 router = APIRouter(prefix="/student/paper-gen-jobs", tags=["student-paper-gen-jobs"])
 
@@ -38,16 +42,15 @@ def _job_to_out(job: PaperGenJob) -> PaperGenJobOut:
 @router.get("/{job_id}", response_model=PaperGenJobOut)
 def get_paper_gen_job(
     job_id: uuid.UUID,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     student: User = Depends(require_roles(UserRole.student)),
 ) -> PaperGenJobOut:
-    if PaperGenJobService().get_for_student(db, job_id=job_id, student_user_id=student.id) is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "job not found")
-
-    PaperGenJobRunner().run_pending(db, limit=1, job_id=job_id)
-    db.commit()
-
     job = PaperGenJobService().get_for_student(db, job_id=job_id, student_user_id=student.id)
     if job is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "job not found")
+
+    if should_kick_paper_gen_job(job):
+        background_tasks.add_task(kick_paper_gen_job, job_id)
+
     return _job_to_out(job)

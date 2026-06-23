@@ -22,6 +22,7 @@ export type PlacementQuestionOut = {
   stem: string;
   choices: PlacementChoiceOut[];
   answer_key: string | null;
+  points: number;
 };
 
 export type PlacementPaperDetail = PlacementPaperSummary & {

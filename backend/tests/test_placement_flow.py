@@ -6,6 +6,12 @@ from tests.factories import make_org, make_user
 from tests.paper_gen_job_helpers import start_placement_and_wait
 
 
+def _placement_answer_content(q: PlacementQuestion) -> str:
+    if q.q_type in ("short_answer", "essay"):
+        return "参考作答要点"
+    return q.answer_key or "A"
+
+
 def _seed_student(db):
     org = make_org(db)
     student = make_user(db, org, role=UserRole.student, email="student@demo.example", password_hash=hash_password("pw"))
@@ -45,7 +51,7 @@ def test_student_can_submit_placement_and_get_result(client, db_session):
 
     payload = {
         "answers": [
-            {"question_id": str(q.id), "content": q.answer_key}
+            {"question_id": str(q.id), "content": _placement_answer_content(q)}
             for q in questions
         ]
     }
@@ -100,7 +106,7 @@ def test_placement_submit_with_existing_mastery_snapshot(client, db_session):
         f"/student/placement/{paper_id}/submit",
         json={
             "answers": [
-                {"question_id": str(q.id), "content": q.answer_key}
+                {"question_id": str(q.id), "content": _placement_answer_content(q)}
                 for q in questions
             ]
         },
