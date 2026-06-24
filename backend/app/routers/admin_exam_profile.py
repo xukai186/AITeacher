@@ -92,6 +92,8 @@ def put_exam_profile(
     admin: User = Depends(require_admin()),
 ) -> ExamProfileOut:
     assert_can_access_student(db, admin, student_id)
+    profile_service = ExamProfileService()
+    old_effective = profile_service.get_effective(db, student_id)
     major = _resolve_major(db, payload)
     subject_codes = _normalize_subject_codes(payload, major)
 
@@ -113,6 +115,17 @@ def put_exam_profile(
     profile.cet_status = payload.cet_status
     profile.cet_score = payload.cet_score
     profile.math_mastery_level = payload.math_mastery_level
+    db.flush()
+    new_effective = profile_service.get_effective(db, student_id)
+    if profile.profile_completed_at is not None:
+        profile_service.sync_student_subjects(db, student_id, subject_codes)
+    if old_effective is not None and new_effective is not None:
+        profile_service.invalidate_placement_on_track_change(
+            db,
+            student_user_id=student_id,
+            old_effective=old_effective,
+            new_effective=new_effective,
+        )
 
     record_audit(
         db,

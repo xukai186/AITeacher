@@ -28,6 +28,7 @@ from app.schemas.placement import (
     PlacementSubjectStatus,
 )
 from app.services.mastery import MasteryService
+from app.services.exam_profile import ExamProfileService
 from app.services.plan_review_jobs import PlanReviewJobService
 from app.services.planning import PlanningService
 from app.services.tasks import TaskGenerator
@@ -207,6 +208,8 @@ class PlacementService:
         *,
         subject_code: str | None = None,
     ) -> PlacementStartOut:
+        if not ExamProfileService().is_complete(db, student_user_id):
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "请先完善报考档案")
         cls._ensure_syllabus(db)
 
         enabled_codes = list(
