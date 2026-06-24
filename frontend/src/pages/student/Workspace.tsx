@@ -5,6 +5,7 @@ import { fetchStudentMe } from "@/api/me";
 import { startPlacement } from "@/api/placement";
 import { fetchTodayTasks } from "@/api/tasks";
 import { generateSelfTest } from "@/api/selfTests";
+import { getStudentExamProfile } from "@/api/examProfile";
 import ChatPanel from "@/components/chat/ChatPanel";
 import { usePaperGenProgress } from "@/hooks/usePaperGenProgress";
 
@@ -24,6 +25,11 @@ export default function Workspace() {
   const todayTasks = useQuery({
     queryKey: ["student", "tasks", "today"],
     queryFn: fetchTodayTasks,
+  });
+
+  const examProfile = useQuery({
+    queryKey: ["student", "exam-profile"],
+    queryFn: getStudentExamProfile,
   });
 
   const paperGen = usePaperGenProgress();
@@ -67,6 +73,7 @@ export default function Workspace() {
 
   const current = activeSubject ?? data.subject_codes[0] ?? null;
   const paperGenBusy = start.isPending || genSelfTest.isPending || paperGen.running;
+  const profileIncomplete = examProfile.isSuccess && !examProfile.data?.profile_completed_at;
 
   return (
     <div className="grid grid-cols-12 gap-4 h-full">
@@ -83,12 +90,17 @@ export default function Workspace() {
           </div>
           <button
             className="px-3 py-1 rounded text-sm bg-slate-900 text-white disabled:bg-slate-200 disabled:text-slate-500"
-            disabled={paperGenBusy || !current}
+            disabled={paperGenBusy || !current || profileIncomplete}
             onClick={() => start.mutate()}
           >
             {paperGenBusy ? "生成题目中…" : "开始摸底测评"}
           </button>
         </div>
+        {profileIncomplete && (
+          <div className="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+            请等待老师完善报考档案
+          </div>
+        )}
         {paperGenBusy && (
           <div className="text-sm text-slate-600 space-y-2">
             <p>{paperGen.message ?? "AI 正在生成题目，请勿重复点击。"}</p>
