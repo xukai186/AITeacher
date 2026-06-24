@@ -7,11 +7,25 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models import MasterPlan, MasterPlanVersion, StudentSubject, SubjectPlan, SubjectPlanVersion, User
+from app.services.exam_profile import ExamProfileService
 from app.services.plan_draft import PlanDraftService
 
 
 class PlanningService:
     def create_initial_plans(self, db: Session, student_user_id: uuid.UUID) -> None:
+        subject_codes = list(
+            db.execute(
+                select(StudentSubject.subject_code).where(
+                    StudentSubject.student_user_id == student_user_id,
+                    StudentSubject.enabled.is_(True),
+                )
+            )
+            .scalars()
+            .all()
+        )
+        if not subject_codes:
+            return
+
         master = db.execute(
             select(MasterPlan).where(MasterPlan.student_user_id == student_user_id)
         ).scalar_one_or_none()
@@ -26,17 +40,6 @@ class PlanningService:
             .order_by(MasterPlanVersion.version.desc())
             .limit(1)
         ).scalar_one_or_none()
-
-        subject_codes = list(
-            db.execute(
-                select(StudentSubject.subject_code).where(
-                    StudentSubject.student_user_id == student_user_id,
-                    StudentSubject.enabled.is_(True),
-                )
-            )
-            .scalars()
-            .all()
-        )
 
         needs_master = version is None
         needs_subjects: list[str] = []
@@ -63,7 +66,14 @@ class PlanningService:
         if needs_master or needs_subjects:
             student = db.get(User, student_user_id)
             org_id = student.org_id if student is not None else None
-            if org_id is not None:
+            exam_profile_svc = ExamProfileService()
+            profile_complete = exam_profile_svc.is_complete(db, student_user_id)
+            effective_profile = exam_profile_svc.get_effective(db, student_user_id)
+            profile_subject_codes = (
+                effective_profile.subject_codes if effective_profile is not None else []
+            )
+            should_draft = profile_complete or bool(profile_subject_codes)
+            if org_id is not None and should_draft:
                 draft = PlanDraftService().draft_initial_plans(
                     db,
                     student_user_id=student_user_id,

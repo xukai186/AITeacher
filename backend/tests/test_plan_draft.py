@@ -1,10 +1,13 @@
 import json
+from datetime import datetime, timezone
 from datetime import date
 
-from app.models import MasterPlanVersion, ModelPolicy, SubjectPlanVersion
+from app.models import MasterPlanVersion, ModelPolicy, StudentExamProfile, SubjectPlanVersion, UserRole
+from app.seed_exam_majors import seed_exam_majors
 from app.services.model_gateway import ModelGateway, ModelGatewayRequest, ModelGatewayResponse
 from app.services.plan_draft import PlanDraftService
 from app.services.planning import PlanningService
+from tests.factories import make_org, make_user
 from tests.test_placement_flow import _seed_student
 
 
@@ -111,3 +114,36 @@ def test_create_initial_plans_persists_llm_draft(db_session, monkeypatch):
     assert master_ver.weekly_goals_json[0]["title"] == "周目标"
     subject_ver = db_session.query(SubjectPlanVersion).one()
     assert subject_ver.phases_json[0]["title"] == "基础"
+
+
+def test_draft_initial_plans_uses_math_none_for_management_major(db_session):
+    seed_exam_majors(db_session)
+    org = make_org(db_session)
+    student = make_user(
+        db_session,
+        org,
+        role=UserRole.student,
+        email="mba-math-none@demo.example",
+    )
+    db_session.add(
+        StudentExamProfile(
+            user_id=student.id,
+            major_category_code="management_joint",
+            major_code="mba_joint",
+            english_track="english_2",
+            math_track="none",
+            subject_codes=["english", "politics"],
+            cet_status="cet6",
+            math_mastery_level="zero",
+            profile_completed_at=datetime.now(timezone.utc),
+        )
+    )
+    db_session.commit()
+
+    draft = PlanDraftService().draft_initial_plans(
+        db_session,
+        student_user_id=student.id,
+        org_id=org.id,
+        subject_codes=["english", "math", "politics"],
+    )
+    assert "math" not in draft.subject_phases_json
