@@ -1,5 +1,6 @@
 import json
 import uuid
+from datetime import datetime, timezone
 
 from sqlalchemy import select
 
@@ -7,10 +8,12 @@ from app.auth.security import hash_password
 from app.models import (
     ModelPolicy,
     SelfTestQuestion,
+    StudentExamProfile,
     SyllabusNode,
     UserRole,
     WrongBookItem,
 )
+from app.seed_exam_majors import seed_exam_majors
 from app.seed_syllabus import seed_minimal_syllabus
 from app.models import PlacementPaper, PlacementQuestion, StudentProfile, StudentSubject
 from app.services.paper_gen import PaperGenService
@@ -815,3 +818,77 @@ def test_placement_start_regenerates_when_llm_paper_has_mock_stems(db_session, m
     )
     assert len(questions) == 22
     assert not any("【模拟摸底·" in q.stem for q in questions)
+
+
+def test_self_test_prompt_excludes_cet_and_math_mastery(db_session, monkeypatch):
+    org, student = _seed_student_with_syllabus(db_session)
+    seed_exam_majors(db_session)
+    node = db_session.execute(
+        select(SyllabusNode).where(SyllabusNode.subject_code == "english").limit(1)
+    ).scalar_one()
+    db_session.add(
+        StudentExamProfile(
+            user_id=student.id,
+            major_category_code="academic_master",
+            major_code="cs_academic",
+            subject_codes=["english", "math", "politics"],
+            cet_status="cet4",
+            cet_score=460,
+            math_mastery_level="basic",
+            profile_completed_at=datetime.now(timezone.utc),
+        )
+    )
+    db_session.add(
+        ModelPolicy(
+            org_id=org.id,
+            scene="paper_gen",
+            provider="openai_compat",
+            model="gpt-test",
+            params={"base_url": "https://example.invalid", "api_key": "k"},
+        )
+    )
+    db_session.commit()
+
+    import app.services.model_gateway as mg
+
+    captured: dict[str, str] = {}
+
+    def fake_generate(self, req):
+        captured["prompt"] = req.prompt
+        payload = {
+            "questions": [
+                {
+                    "seq": 1,
+                    "knowledge_node_id": str(node.id),
+                    "q_type": "single_choice",
+                    "stem": "AI 自测：阅读理解",
+                    "choices": [
+                        {"key": "A", "text": "选项A"},
+                        {"key": "B", "text": "选项B"},
+                        {"key": "C", "text": "选项C"},
+                        {"key": "D", "text": "选项D"},
+                    ],
+                    "answer_key": "B",
+                    "points": 1,
+                }
+            ]
+        }
+        return mg.ModelGatewayResponse(text=json.dumps(payload, ensure_ascii=False))
+
+    monkeypatch.setattr(mg.ModelGateway, "generate", fake_generate)
+
+    questions = PaperGenService().generate_for_self_test(
+        db_session,
+        org_id=org.id,
+        student_user_id=student.id,
+        subject_code="english",
+        question_count=1,
+    )
+
+    assert len(questions) == 1
+    prompt = captured["prompt"].lower()
+    assert "cet" not in prompt
+    assert "四六级" not in captured["prompt"]
+    assert "math_mastery" not in prompt
+    assert "数学基础" not in captured["prompt"]
+    assert "english_1" in captured["prompt"]
