@@ -96,7 +96,7 @@ def seed_past_exam_paper_templates(db: Session, *, syllabus_exam_year: int = 202
                 if math_track is None
                 else PastExamPaperTemplate.math_track == math_track,
             )
-        ).scalar_one_or_none()
+        ).scalars().first()
         if existing is not None:
             existing.reference_year = spec["reference_year"]
             existing.title = spec["title"]

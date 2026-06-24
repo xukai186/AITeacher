@@ -96,7 +96,7 @@ def _find_leaf(db: Session, subject_code: str, leaf_name: str, exam_year: int) -
             SyllabusNode.name == leaf_name,
             SyllabusNode.exam_year == exam_year,
         )
-    ).scalar_one_or_none()
+    ).scalars().first()
 
 
 def seed_past_exam_questions(db: Session, *, syllabus_exam_year: int = 2027) -> None:

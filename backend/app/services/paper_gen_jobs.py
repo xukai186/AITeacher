@@ -286,6 +286,8 @@ class PaperGenJobRunner:
                 db,
                 subject_code=job.subject_code,
                 exam_year=placement_context.exam_year,
+                english_track=placement_context.english_track,
+                math_track=placement_context.math_track,
             )
             if not leaves:
                 raise ValueError("syllabus missing for subject")
@@ -515,6 +517,8 @@ class PaperGenJobRunner:
                     prep_db,
                     subject_code=job.subject_code,
                     exam_year=placement_context.exam_year,
+                    english_track=placement_context.english_track,
+                    math_track=placement_context.math_track,
                 )
                 if not leaves:
                     raise ValueError("syllabus missing for subject")

@@ -118,7 +118,11 @@ class PaperGenService:
                 db, student_user_id=student_user_id, subject_code=subject_code
             )
             leaves = leaf_nodes_for_placement(
-                db, subject_code=subject_code, exam_year=placement_context.exam_year
+                db,
+                subject_code=subject_code,
+                exam_year=placement_context.exam_year,
+                english_track=placement_context.english_track,
+                math_track=placement_context.math_track,
             )
             if not leaves:
                 raise ValueError("syllabus missing for subject")

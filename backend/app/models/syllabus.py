@@ -24,6 +24,8 @@ class SyllabusNode(Base):
 
     exam_year: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
+    meta_json: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
