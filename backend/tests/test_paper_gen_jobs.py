@@ -5,6 +5,7 @@ from app.models import ModelPolicy, PaperGenJob, PlacementPaper, PlacementQuesti
 from app.seed_syllabus import seed_minimal_syllabus
 from app.services.placement import PlacementService
 from app.services.paper_gen_jobs import STALE_RUNNING_SECONDS, PaperGenJobRunner, PaperGenJobService
+from tests.exam_profile_helpers import add_complete_exam_profile
 from tests.factories import make_org, make_user
 from tests.paper_gen_job_helpers import finish_paper_gen_jobs
 
@@ -20,6 +21,7 @@ def _seed_student(db):
     seed_minimal_syllabus(db)
     db.add(StudentProfile(user_id=student.id, exam_year=2027))
     db.add(StudentSubject(student_user_id=student.id, subject_code="math", enabled=True))
+    add_complete_exam_profile(db, student.id, subject_codes=["english", "math", "politics"])
     db.add(
         ModelPolicy(
             org_id=org.id,

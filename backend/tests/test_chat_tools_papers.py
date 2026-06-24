@@ -7,6 +7,7 @@ from app.services.paper_gen_jobs import PaperGenJobRunner
 from app.services.placement import PlacementService
 from app.services.self_test import SelfTestService
 from app.services.planning import PlanningService
+from tests.exam_profile_helpers import add_complete_exam_profile
 from tests.factories import make_org, make_user
 
 
@@ -20,6 +21,7 @@ def _seed_student(db):
         password_hash=hash_password("pw"),
     )
     db.add(StudentProfile(user_id=student.id, exam_year=2027))
+    add_complete_exam_profile(db, student.id)
     db.add(StudentSubject(student_user_id=student.id, subject_code="english", enabled=True))
     db.add(ModelPolicy(org_id=org.id, scene="chat", provider="mock", model="mock-v1", params={}))
     db.add(ModelPolicy(org_id=org.id, scene="paper_gen", provider="mock", model="mock-v1", params={}))

@@ -37,6 +37,7 @@ def my_students(
             open_review_job_count=signals[user.id].open_review_job_count,
             requires_plan_confirmation=signals[user.id].requires_plan_confirmation,
             wrong_added_7d=signals[user.id].wrong_added_7d,
+            exam_profile_complete=signals[user.id].exam_profile_complete,
         )
         for user, profile in rows
     ]

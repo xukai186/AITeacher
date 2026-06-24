@@ -19,6 +19,7 @@ from app.models import PlacementPaper, PlacementQuestion, StudentProfile, Studen
 from app.services.paper_gen import PaperGenService
 from app.services.placement import PlacementService
 from app.services.self_test import SelfTestService
+from tests.exam_profile_helpers import add_complete_exam_profile
 from tests.factories import make_org, make_user
 from tests.paper_gen_job_helpers import finish_paper_gen_jobs
 
@@ -33,6 +34,7 @@ def _seed_student_with_syllabus(db):
         password_hash=hash_password("pw"),
     )
     seed_minimal_syllabus(db)
+    add_complete_exam_profile(db, student.id)
     db.commit()
     return org, student
 
@@ -822,22 +824,13 @@ def test_placement_start_regenerates_when_llm_paper_has_mock_stems(db_session, m
 
 def test_self_test_prompt_excludes_cet_and_math_mastery(db_session, monkeypatch):
     org, student = _seed_student_with_syllabus(db_session)
-    seed_exam_majors(db_session)
     node = db_session.execute(
         select(SyllabusNode).where(SyllabusNode.subject_code == "english").limit(1)
     ).scalar_one()
-    db_session.add(
-        StudentExamProfile(
-            user_id=student.id,
-            major_category_code="academic_master",
-            major_code="cs_academic",
-            subject_codes=["english", "math", "politics"],
-            cet_status="cet4",
-            cet_score=460,
-            math_mastery_level="basic",
-            profile_completed_at=datetime.now(timezone.utc),
-        )
-    )
+    profile = db_session.get(StudentExamProfile, student.id)
+    profile.cet_status = "cet4"
+    profile.cet_score = 460
+    profile.math_mastery_level = "basic"
     db_session.add(
         ModelPolicy(
             org_id=org.id,

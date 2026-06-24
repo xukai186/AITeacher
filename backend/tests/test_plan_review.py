@@ -9,6 +9,7 @@ from app.services.planning import PlanningService
 from app.services.plan_review import PlanReviewService
 from app.services.plan_review_jobs import PlanReviewJobRunner
 from app.services.tasks import TaskGenerator
+from tests.exam_profile_helpers import add_complete_exam_profile
 from tests.factories import make_org, make_user
 from tests.paper_gen_job_helpers import generate_self_test_and_wait, start_placement_and_wait
 
@@ -23,6 +24,7 @@ def _seed_student(db):
         password_hash=hash_password("pw"),
     )
     db.add(StudentProfile(user_id=student.id, exam_year=2027))
+    add_complete_exam_profile(db, student.id)
     db.add(StudentSubject(student_user_id=student.id, subject_code="english"))
     db.commit()
     PlanningService().create_initial_plans(db, student_user_id=student.id)

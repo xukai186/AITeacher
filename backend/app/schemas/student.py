@@ -25,6 +25,7 @@ class StudentSummary(BaseModel):
     open_review_job_count: int = 0
     requires_plan_confirmation: bool = False
     wrong_added_7d: int = 0
+    exam_profile_complete: bool = False
 
 
 class StudentDetail(StudentSummary):

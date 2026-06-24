@@ -7,7 +7,7 @@ from datetime import date, datetime, timedelta, timezone
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.models import DailyTask, MasterPlan, PlanReviewJob, WrongBookItem
+from app.models import DailyTask, MasterPlan, PlanReviewJob, StudentExamProfile, WrongBookItem
 
 
 @dataclass
@@ -16,6 +16,7 @@ class OrgStudentSignals:
     open_review_job_count: int = 0
     requires_plan_confirmation: bool = False
     wrong_added_7d: int = 0
+    exam_profile_complete: bool = False
 
 
 def signals_for_students(
@@ -66,5 +67,14 @@ def signals_for_students(
         .group_by(WrongBookItem.student_user_id)
     ).all():
         out[sid].wrong_added_7d = int(cnt)
+
+    for sid in db.execute(
+        select(StudentExamProfile.user_id).where(
+            StudentExamProfile.user_id.in_(student_ids),
+            StudentExamProfile.profile_completed_at.is_not(None),
+            StudentExamProfile.major_code != "",
+        )
+    ).scalars():
+        out[sid].exam_profile_complete = True
 
     return out
