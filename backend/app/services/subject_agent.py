@@ -8,6 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models import DailyTask
+from app.services.exam_profile import ExamProfileService
 from app.services.master_planner import budget_minutes_for_date, scheduled_minutes_for_date
 from app.services.report import ReportQuery, ReportService
 
@@ -108,6 +109,14 @@ class SubjectAgentService:
             result.created.append(task)
             result.created_count += 1
 
+        self._maybe_add_profile_boost(
+            db,
+            student_user_id=student_user_id,
+            subject_code=subject_code,
+            target_date=day,
+            result=result,
+        )
+
         result.budget_minutes = budget_minutes_for_date(db, student_user_id, day)
         result.scheduled_minutes = scheduled_minutes_for_date(db, student_user_id, day)
         if result.budget_minutes is not None and result.scheduled_minutes > result.budget_minutes:
@@ -118,3 +127,68 @@ class SubjectAgentService:
             )
 
         return result
+
+    @staticmethod
+    def _maybe_add_profile_boost(
+        db: Session,
+        *,
+        student_user_id: uuid.UUID,
+        subject_code: str,
+        target_date: date,
+        result: ApplyRecommendationsResult,
+    ) -> None:
+        effective = ExamProfileService().get_effective(db, student_user_id)
+        if effective is None:
+            return
+
+        should_boost = False
+        title = ""
+        if subject_code == "english" and effective.cet_status in (None, "not_taken"):
+            should_boost = True
+            title = "英语基础巩固"
+        elif (
+            subject_code == "math"
+            and effective.math_track != "none"
+            and effective.math_mastery_level in (None, "zero", "basic")
+        ):
+            should_boost = True
+            title = "数学基础巩固"
+
+        if not should_boost:
+            return
+
+        ref_id = _task_ref_id(
+            student_user_id,
+            target_date,
+            subject_code,
+            "study",
+            "exam_profile_boost",
+        )
+        existing = db.execute(
+            select(DailyTask.id).where(
+                DailyTask.student_user_id == student_user_id,
+                DailyTask.date == target_date,
+                DailyTask.subject_code == subject_code,
+                DailyTask.type == "study",
+                DailyTask.ref_id == ref_id,
+            )
+        ).scalar_one_or_none()
+        if existing is not None:
+            result.skipped_count += 1
+            return
+
+        task = DailyTask(
+            student_user_id=student_user_id,
+            date=target_date,
+            subject_code=subject_code,
+            type="study",
+            ref_id=ref_id,
+            status="pending",
+            est_minutes=30,
+            title=title,
+            payload_json={"source": "exam_profile_boost"},
+        )
+        db.add(task)
+        db.flush()
+        result.created.append(task)
+        result.created_count += 1

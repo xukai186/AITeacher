@@ -147,3 +147,41 @@ def test_draft_initial_plans_uses_math_none_for_management_major(db_session):
         subject_codes=["english", "math", "politics"],
     )
     assert "math" not in draft.subject_phases_json
+
+
+def test_light_revise_draft_boosts_budget_for_cet_not_taken(db_session):
+    seed_exam_majors(db_session)
+    org = make_org(db_session)
+    student = make_user(
+        db_session,
+        org,
+        role=UserRole.student,
+        email="lrd@demo.example",
+    )
+    from app.services.exam_profile import ExamProfileService
+
+    ExamProfileService().sync_student_subjects(
+        db_session, student.id, ["english", "math", "politics"]
+    )
+    db_session.add(
+        StudentExamProfile(
+            user_id=student.id,
+            major_category_code="academic_master",
+            major_code="cs_academic",
+            subject_codes=["english", "math", "politics"],
+            cet_status="not_taken",
+            profile_completed_at=datetime.now(timezone.utc),
+        )
+    )
+    db_session.commit()
+
+    draft = PlanDraftService().light_revise_draft(
+        db_session,
+        student_user_id=student.id,
+        today=date(2026, 6, 25),
+    )
+    total = sum(e["minutes"] for e in draft.daily_time_budget_json)
+    assert total > 7 * 180
+    assert "english" in draft.subject_phases_json
+    notes = draft.subject_phases_json["english"][0]["notes"]
+    assert "CET" in notes or "词汇" in notes

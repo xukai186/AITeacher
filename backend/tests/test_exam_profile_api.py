@@ -195,3 +195,83 @@ def test_student_cannot_put_profile(client, db_session):
         headers={"Authorization": f"Bearer {token}"},
     )
     assert resp.status_code == 403
+
+
+def test_put_cet_only_triggers_light_revise(client, db_session, monkeypatch):
+    from datetime import datetime, timezone
+
+    seed_exam_majors(db_session)
+    org, _admin = _seed_admin(db_session)
+    student = make_user(db_session, org, role=UserRole.student, email="cet-only@demo.example")
+    db_session.add(
+        StudentExamProfile(
+            user_id=student.id,
+            major_category_code="academic_master",
+            major_code="cs_academic",
+            subject_codes=["english", "math", "politics"],
+            cet_status="cet4",
+            profile_completed_at=datetime.now(timezone.utc),
+        )
+    )
+    db_session.commit()
+    token = _login(client, "admin@demo.example", "admin123")
+
+    called: list = []
+
+    def _fake_light(self, db, student_user_id):
+        called.append(student_user_id)
+
+    monkeypatch.setattr(PlanningService, "light_revise_from_profile", _fake_light)
+
+    resp = client.put(
+        f"/admin/students/{student.id}/exam-profile",
+        json={
+            "major_category_code": "academic_master",
+            "major_code": "cs_academic",
+            "cet_status": "not_taken",
+            "math_mastery_level": "basic",
+        },
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 200
+    assert called == [student.id]
+
+
+def test_put_track_change_does_not_light_revise(client, db_session, monkeypatch):
+    from datetime import datetime, timezone
+
+    seed_exam_majors(db_session)
+    org, _admin = _seed_admin(db_session)
+    student = make_user(db_session, org, role=UserRole.student, email="track-change@demo.example")
+    db_session.add(
+        StudentExamProfile(
+            user_id=student.id,
+            major_category_code="academic_master",
+            major_code="cs_academic",
+            subject_codes=["english", "math", "politics"],
+            english_track="english_1",
+            profile_completed_at=datetime.now(timezone.utc),
+        )
+    )
+    db_session.commit()
+    token = _login(client, "admin@demo.example", "admin123")
+
+    called: list = []
+
+    def _fake_light(self, db, student_user_id):
+        called.append(student_user_id)
+
+    monkeypatch.setattr(PlanningService, "light_revise_from_profile", _fake_light)
+
+    resp = client.put(
+        f"/admin/students/{student.id}/exam-profile",
+        json={
+            "major_category_code": "academic_master",
+            "major_code": "cs_academic",
+            "english_track": "english_2",
+            "math_mastery_level": "basic",
+        },
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 200
+    assert called == []

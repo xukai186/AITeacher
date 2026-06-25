@@ -8,7 +8,7 @@ from datetime import date, timedelta
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models import MasterySnapshot, ModelPolicy, StudentProfile, User
+from app.models import MasterySnapshot, ModelPolicy, StudentProfile, StudentSubject, User
 from app.services.exam_profile import ExamProfileService
 from app.services.model_gateway import ModelGateway, ModelGatewayRequest
 from app.services.report import ReportQuery, ReportService
@@ -65,6 +65,117 @@ class PlanDraftService:
             subject_codes=subject_codes,
             today=day,
         )
+
+    def light_revise_draft(
+        self,
+        db: Session,
+        *,
+        student_user_id: uuid.UUID,
+        today: date | None = None,
+    ) -> PlanDraft:
+        day = today or date.today()
+        subject_codes = list(
+            db.execute(
+                select(StudentSubject.subject_code).where(
+                    StudentSubject.student_user_id == student_user_id,
+                    StudentSubject.enabled.is_(True),
+                )
+            )
+            .scalars()
+            .all()
+        )
+        context = self._build_context(
+            db, student_user_id=student_user_id, subject_codes=subject_codes
+        )
+        revise_codes = [
+            code
+            for code in ("english", "math")
+            if code in self._effective_subject_codes(subject_codes, context)
+        ]
+        weak_subjects = [
+            s["subject_code"]
+            for s in context.get("subjects", [])
+            if int(s.get("weak_node_count") or 0) > 0
+        ]
+        focus = "、".join(SUBJECT_LABELS.get(c, c) for c in weak_subjects[:2]) or "各科基础"
+        weekly_goals = [
+            {
+                "title": "夯实薄弱知识点",
+                "description": f"本周优先巩固 {focus}，按每日任务完成学习与错题复习。",
+            },
+            {
+                "title": "保持稳定学习节奏",
+                "description": "每日完成系统安排的学习与自测任务，及时查看学情反馈。",
+            },
+        ]
+        if context.get("cet_status") == "not_taken":
+            weekly_goals.insert(
+                0,
+                {
+                    "title": "强化英语基础",
+                    "description": "结合四六级水平，优先词汇语法与基础阅读训练。",
+                },
+            )
+        if context.get("math_mastery_level") == "zero":
+            weekly_goals.insert(
+                0,
+                {
+                    "title": "夯实数学基础",
+                    "description": "从核心概念与基础题型起步，稳步提升解题能力。",
+                },
+            )
+        extra_minutes = 0
+        if context.get("cet_status") == "not_taken":
+            extra_minutes += 10
+        if context.get("math_mastery_level") == "zero":
+            extra_minutes += 10
+        daily_time_budget_json = [
+            {
+                "date": budget_day.isoformat(),
+                "minutes": DEFAULT_DAILY_MINUTES + extra_minutes,
+            }
+            for budget_day in self._budget_dates(day)
+        ]
+        subject_phases_json = {
+            code: self.phases_for_subject(code, context) for code in revise_codes
+        }
+        return PlanDraft(
+            weekly_goals_json=weekly_goals,
+            daily_time_budget_json=daily_time_budget_json,
+            subject_phases_json=subject_phases_json,
+        )
+
+    def phases_for_subject(self, code: str, context: dict) -> list[dict]:
+        label = SUBJECT_LABELS.get(code, code)
+        weak = next(
+            (s for s in context.get("subjects", []) if s["subject_code"] == code),
+            None,
+        )
+        weak_count = int(weak.get("weak_node_count") or 0) if weak else 0
+        notes = (
+            f"针对 {weak_count} 个薄弱知识点安排基础练习与回顾。"
+            if weak_count
+            else f"{label} 基础巩固与题型熟悉。"
+        )
+        if code == "english":
+            cet_status = context.get("cet_status")
+            if cet_status == "not_taken":
+                notes = f"{notes} CET 未通过，强化词汇语法与基础阅读。"
+            elif cet_status == "cet4":
+                notes = f"{notes} CET4 已通过，重点提升阅读速度与写作结构。"
+            elif cet_status == "cet6":
+                notes = f"{notes} CET6 已通过，增加高阶阅读、翻译与表达训练。"
+        if code == "math":
+            mastery = context.get("math_mastery_level")
+            if mastery == "zero":
+                notes = f"{notes} 数学基础为 zero，从核心概念和基础题型起步。"
+            elif mastery == "basic":
+                notes = f"{notes} 数学基础为 basic，先稳固公式再推进综合题。"
+            elif mastery == "good":
+                notes = f"{notes} 数学基础为 good，增加中高难度综合训练。"
+            elif mastery == "strong":
+                notes = f"{notes} 数学基础为 strong，重点攻克压轴题与限时训练。"
+        return [{"title": f"{label}起步阶段", "days": 7, "notes": notes}]
 
     @staticmethod
     def _policy(db: Session, org_id: uuid.UUID) -> ModelPolicy | None:
@@ -175,38 +286,7 @@ class PlanDraftService:
         ]
         subject_phases_json: dict[str, list[dict]] = {}
         for code in effective_subject_codes:
-            label = SUBJECT_LABELS.get(code, code)
-            weak = next(
-                (s for s in context.get("subjects", []) if s["subject_code"] == code),
-                None,
-            )
-            weak_count = int(weak.get("weak_node_count") or 0) if weak else 0
-            notes = (
-                f"针对 {weak_count} 个薄弱知识点安排基础练习与回顾。"
-                if weak_count
-                else f"{label} 基础巩固与题型熟悉。"
-            )
-            if code == "english":
-                cet_status = context.get("cet_status")
-                if cet_status == "not_taken":
-                    notes = f"{notes} CET 未通过，强化词汇语法与基础阅读。"
-                elif cet_status == "cet4":
-                    notes = f"{notes} CET4 已通过，重点提升阅读速度与写作结构。"
-                elif cet_status == "cet6":
-                    notes = f"{notes} CET6 已通过，增加高阶阅读、翻译与表达训练。"
-            if code == "math":
-                mastery = context.get("math_mastery_level")
-                if mastery == "zero":
-                    notes = f"{notes} 数学基础为 zero，从核心概念和基础题型起步。"
-                elif mastery == "basic":
-                    notes = f"{notes} 数学基础为 basic，先稳固公式再推进综合题。"
-                elif mastery == "good":
-                    notes = f"{notes} 数学基础为 good，增加中高难度综合训练。"
-                elif mastery == "strong":
-                    notes = f"{notes} 数学基础为 strong，重点攻克压轴题与限时训练。"
-            subject_phases_json[code] = [
-                {"title": f"{label}起步阶段", "days": 7, "notes": notes}
-            ]
+            subject_phases_json[code] = self.phases_for_subject(code, context)
         return PlanDraft(
             weekly_goals_json=weekly_goals,
             daily_time_budget_json=daily_time_budget_json,

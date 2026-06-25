@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import uuid
+from typing import Literal
 
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
@@ -9,6 +10,8 @@ from app.models import ExamMajor, PlacementPaper, PlacementQuestion, PlacementSu
 from app.schemas.exam_profile import EffectiveExamProfile
 
 KNOWN_SUBJECT_CODES = ("english", "math", "politics")
+
+ProfileChangeKind = Literal["structural", "baseline", "none"]
 
 
 class ExamProfileService:
@@ -81,6 +84,28 @@ class ExamProfileService:
         db.add(profile)
         db.flush()
         return profile
+
+    @staticmethod
+    def profile_change_kind(
+        old: EffectiveExamProfile | None, new: EffectiveExamProfile | None
+    ) -> ProfileChangeKind:
+        if old is None or new is None:
+            return "none"
+        if (
+            old.major_category_code != new.major_category_code
+            or old.major_code != new.major_code
+            or old.english_track != new.english_track
+            or old.math_track != new.math_track
+            or list(old.subject_codes) != list(new.subject_codes)
+        ):
+            return "structural"
+        if (
+            old.cet_status != new.cet_status
+            or old.cet_score != new.cet_score
+            or old.math_mastery_level != new.math_mastery_level
+        ):
+            return "baseline"
+        return "none"
 
     def invalidate_placement_on_track_change(
         self,

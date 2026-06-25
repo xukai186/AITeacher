@@ -68,7 +68,7 @@
 
 ### 3.2 学生考试档案
 
-`**StudentExamProfile**`（`user_id` PK，FK → `users.id`）
+`**StudentExamProfile`**（`user_id` PK，FK → `users.id`）
 
 
 | 字段                          | 说明                    |
@@ -87,7 +87,7 @@
 
 ### 3.3 有效配置解析
 
-`**ExamProfileService.get_effective(student_user_id)**` 返回 `EffectiveExamProfile`：
+`**ExamProfileService.get_effective(student_user_id)`** 返回 `EffectiveExamProfile`：
 
 - 合并 `StudentExamProfile` 与 `ExamMajor` 默认值（老师未填 track 时用专业默认）
 - 下游模块**只读**此对象，禁止各自拼字段

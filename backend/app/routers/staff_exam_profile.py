@@ -73,6 +73,31 @@ def put_exam_profile(
             new_effective=new_effective,
         )
 
+    change_kind = ExamProfileService.profile_change_kind(old_effective, new_effective)
+    if profile.profile_completed_at is not None and change_kind == "baseline":
+        PlanningService().light_revise_from_profile(db, student_id)
+        record_audit(
+            db,
+            actor=staff,
+            action="student.exam_profile.light_revise",
+            target_type="student",
+            target_id=str(student_id),
+            before={
+                "cet_status": old_effective.cet_status if old_effective else None,
+                "cet_score": old_effective.cet_score if old_effective else None,
+                "math_mastery_level": (
+                    old_effective.math_mastery_level if old_effective else None
+                ),
+            },
+            after={
+                "cet_status": new_effective.cet_status if new_effective else None,
+                "cet_score": new_effective.cet_score if new_effective else None,
+                "math_mastery_level": (
+                    new_effective.math_mastery_level if new_effective else None
+                ),
+            },
+        )
+
     record_audit(
         db,
         actor=staff,
