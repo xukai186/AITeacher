@@ -20,6 +20,7 @@ from app.services.placement_paper_context import (
     leaf_nodes_for_placement,
     reference_year_for_node,
 )
+from app.services.exam_profile import ExamProfileService
 from app.services.report import ReportQuery, ReportService
 from app.services.model_gateway import ModelGateway, ModelGatewayRequest
 
@@ -118,7 +119,11 @@ class PaperGenService:
                 db, student_user_id=student_user_id, subject_code=subject_code
             )
             leaves = leaf_nodes_for_placement(
-                db, subject_code=subject_code, exam_year=placement_context.exam_year
+                db,
+                subject_code=subject_code,
+                exam_year=placement_context.exam_year,
+                english_track=placement_context.english_track,
+                math_track=placement_context.math_track,
             )
             if not leaves:
                 raise ValueError("syllabus missing for subject")
@@ -138,6 +143,13 @@ class PaperGenService:
                 raise ValueError("syllabus missing for subject")
             if question_count is None:
                 question_count = DEFAULT_QUESTION_COUNT
+
+        self_test_english_track: str | None = None
+        self_test_math_track: str | None = None
+        if purpose == "self_test":
+            self_test_english_track, self_test_math_track = self._self_test_tracks(
+                db, student_user_id=student_user_id, subject_code=subject_code
+            )
 
         target_nodes = self._pick_target_nodes(
             db, overview.weak_nodes, leaves, question_count
@@ -188,6 +200,8 @@ class PaperGenService:
             target_nodes=target_nodes,
             question_count=question_count,
             purpose=purpose,
+            english_track=self_test_english_track,
+            math_track=self_test_math_track,
             on_progress=on_progress,
         )
         if batched:
@@ -252,6 +266,8 @@ class PaperGenService:
         student_user_id: uuid.UUID,
         subject_code: str,
         question_count: int,
+        english_track: str | None = None,
+        math_track: str | None = None,
         on_progress: ProgressCallback | None = None,
     ) -> list[GeneratedQuestion]:
         if provider is None or provider == "mock":
@@ -275,6 +291,8 @@ class PaperGenService:
             target_nodes=target_nodes,
             question_count=question_count,
             purpose="self_test",
+            english_track=english_track,
+            math_track=math_track,
             on_progress=on_progress,
         )
         if batched:
@@ -290,6 +308,20 @@ class PaperGenService:
         if on_progress:
             on_progress(len(out), question_count, f"已生成 {len(out)}/{question_count} 题")
         return out
+
+    @staticmethod
+    def _self_test_tracks(
+        db: Session,
+        *,
+        student_user_id: uuid.UUID,
+        subject_code: str,
+    ) -> tuple[str | None, str | None]:
+        effective = ExamProfileService().get_effective(db, student_user_id)
+        if effective is None:
+            return None, None
+        english_track = effective.english_track if subject_code == "english" else None
+        math_track = effective.math_track if subject_code == "math" else None
+        return english_track, math_track
 
     def _generate_with_llm_batches_from_slots(
         self,
@@ -428,6 +460,8 @@ class PaperGenService:
         target_nodes: list[SyllabusNode],
         question_count: int,
         purpose: PaperPurpose,
+        english_track: str | None = None,
+        math_track: str | None = None,
         on_progress: ProgressCallback | None = None,
     ) -> list[GeneratedQuestion]:
         out: list[GeneratedQuestion] = []
@@ -447,6 +481,8 @@ class PaperGenService:
                     target_nodes=batch_nodes,
                     question_count=batch_count,
                     purpose=purpose,
+                    english_track=english_track,
+                    math_track=math_track,
                 )
                 parsed = self._parse_llm_questions(
                     raw, target_nodes=batch_nodes, question_count=batch_count
@@ -655,6 +691,8 @@ class PaperGenService:
         target_nodes: list[SyllabusNode],
         question_count: int,
         purpose: PaperPurpose,
+        english_track: str | None = None,
+        math_track: str | None = None,
     ) -> str:
         nodes_payload = [
             {"id": str(n.id), "name": n.name} for n in target_nodes[:question_count]
@@ -663,8 +701,14 @@ class PaperGenService:
             f"你是考研辅导命题老师。请为{self._purpose_label(purpose)}生成选择题。",
             f"科目代码：{subject_code}",
             f"需要题目数量：{question_count}",
-            "优先覆盖以下知识点（薄弱点优先）：",
         ]
+        if purpose == "self_test":
+            if english_track:
+                prompt_lines.append(f"英语卷种：{english_track}")
+            if math_track:
+                prompt_lines.append(f"数学卷种：{math_track}")
+
+        prompt_lines.append("优先覆盖以下知识点（薄弱点优先）：")
 
         prompt_lines.extend(
             [

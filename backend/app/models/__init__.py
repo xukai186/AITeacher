@@ -1,5 +1,6 @@
 from app.models.audit import AuditLog
 from app.models.base import Base
+from app.models.exam_major import ExamMajor, ExamMajorCategory
 from app.models.chat import AgentType, ChatMessage, ChatSession
 from app.models.model_policy import ModelPolicy
 from app.models.learning_event import LearningEvent
@@ -22,6 +23,7 @@ from app.models.paper_gen_job import PaperGenJob
 from app.models.plan_review_job import PlanReviewJob
 from app.models.staff_student import StaffStudent
 from app.models.student import StudentProfile, StudentSubject
+from app.models.student_exam_profile import StudentExamProfile
 from app.models.syllabus import SyllabusNode
 from app.models.task import DailyTask
 from app.models.user import User, UserRole, UserStatus
@@ -34,6 +36,8 @@ __all__ = [
     "ChatMessage",
     "ChatSession",
     "DailyTask",
+    "ExamMajor",
+    "ExamMajorCategory",
     "MasterPlan",
     "MasterPlanVersion",
     "ModelPolicy",
@@ -56,6 +60,7 @@ __all__ = [
     "SelfTestQuestion",
     "SelfTestSubmission",
     "StaffStudent",
+    "StudentExamProfile",
     "StudentProfile",
     "StudentSubject",
     "SubjectPlan",

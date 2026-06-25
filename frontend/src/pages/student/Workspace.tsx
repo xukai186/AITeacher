@@ -5,6 +5,7 @@ import { fetchStudentMe } from "@/api/me";
 import { startPlacement } from "@/api/placement";
 import { fetchTodayTasks } from "@/api/tasks";
 import { generateSelfTest } from "@/api/selfTests";
+import { getStudentExamProfile } from "@/api/examProfile";
 import ChatPanel from "@/components/chat/ChatPanel";
 import { usePaperGenProgress } from "@/hooks/usePaperGenProgress";
 
@@ -12,6 +13,30 @@ const SUBJECT_LABELS: Record<string, string> = {
   politics: "政治",
   english: "英语",
   math: "数学",
+};
+
+const ENGLISH_TRACK_LABELS: Record<string, string> = {
+  english_1: "英语一",
+  english_2: "英语二",
+};
+
+const MATH_TRACK_LABELS: Record<string, string> = {
+  math_1: "数学一",
+  math_2: "数学二",
+  none: "不考数学",
+};
+
+const CET_STATUS_LABELS: Record<string, string> = {
+  not_taken: "未考",
+  cet4: "四级",
+  cet6: "六级",
+};
+
+const MATH_LEVEL_LABELS: Record<string, string> = {
+  zero: "零基础",
+  basic: "一般",
+  good: "较好",
+  strong: "很好",
 };
 
 export default function Workspace() {
@@ -24,6 +49,11 @@ export default function Workspace() {
   const todayTasks = useQuery({
     queryKey: ["student", "tasks", "today"],
     queryFn: fetchTodayTasks,
+  });
+
+  const examProfile = useQuery({
+    queryKey: ["student", "exam-profile"],
+    queryFn: getStudentExamProfile,
   });
 
   const paperGen = usePaperGenProgress();
@@ -67,6 +97,10 @@ export default function Workspace() {
 
   const current = activeSubject ?? data.subject_codes[0] ?? null;
   const paperGenBusy = start.isPending || genSelfTest.isPending || paperGen.running;
+  const profile = examProfile.data;
+  const profileIncomplete =
+    examProfile.isSuccess && (!profile || !profile.profile_completed_at);
+  const profileComplete = Boolean(profile?.profile_completed_at);
 
   return (
     <div className="grid grid-cols-12 gap-4 h-full">
@@ -76,6 +110,41 @@ export default function Workspace() {
           <div className="text-sm text-slate-500">考试年份：{data.exam_year}</div>
         </header>
 
+        {examProfile.isLoading && (
+          <p className="text-sm text-slate-500">加载报考档案…</p>
+        )}
+        {profileComplete && profile && (
+          <div className="rounded border bg-slate-50 p-3 text-sm space-y-1" data-testid="exam-profile-summary">
+            <p className="font-medium text-slate-800">报考档案</p>
+            <p>
+              <span className="text-slate-500">专业：</span>
+              {profile.major_name}
+            </p>
+            <p>
+              <span className="text-slate-500">卷种：</span>
+              {ENGLISH_TRACK_LABELS[profile.effective_english_track] ?? profile.effective_english_track}
+              {" · "}
+              {MATH_TRACK_LABELS[profile.effective_math_track] ?? profile.effective_math_track}
+            </p>
+            <p>
+              <span className="text-slate-500">科目：</span>
+              {profile.subject_codes.map((c) => SUBJECT_LABELS[c] ?? c).join("、")}
+            </p>
+            {(profile.cet_status || profile.math_mastery_level) && (
+              <p>
+                <span className="text-slate-500">基础水平：</span>
+                {profile.cet_status
+                  ? `${CET_STATUS_LABELS[profile.cet_status] ?? profile.cet_status}${profile.cet_score != null ? ` ${profile.cet_score} 分` : ""}`
+                  : ""}
+                {profile.cet_status && profile.math_mastery_level ? " · " : ""}
+                {profile.math_mastery_level
+                  ? `数学 ${MATH_LEVEL_LABELS[profile.math_mastery_level] ?? profile.math_mastery_level}`
+                  : ""}
+              </p>
+            )}
+          </div>
+        )}
+
         <div className="flex justify-between items-center">
           <div className="text-sm text-slate-600">
             摸底测评（P3）
@@ -83,12 +152,17 @@ export default function Workspace() {
           </div>
           <button
             className="px-3 py-1 rounded text-sm bg-slate-900 text-white disabled:bg-slate-200 disabled:text-slate-500"
-            disabled={paperGenBusy || !current}
+            disabled={paperGenBusy || !current || profileIncomplete}
             onClick={() => start.mutate()}
           >
             {paperGenBusy ? "生成题目中…" : "开始摸底测评"}
           </button>
         </div>
+        {profileIncomplete && (
+          <div className="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+            请等待老师完善报考档案
+          </div>
+        )}
         {paperGenBusy && (
           <div className="text-sm text-slate-600 space-y-2">
             <p>{paperGen.message ?? "AI 正在生成题目，请勿重复点击。"}</p>

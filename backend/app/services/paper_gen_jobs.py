@@ -286,6 +286,8 @@ class PaperGenJobRunner:
                 db,
                 subject_code=job.subject_code,
                 exam_year=placement_context.exam_year,
+                english_track=placement_context.english_track,
+                math_track=placement_context.math_track,
             )
             if not leaves:
                 raise ValueError("syllabus missing for subject")
@@ -347,6 +349,11 @@ class PaperGenJobRunner:
                     db, overview.weak_nodes, leaves, total
                 )
             )
+            english_track, math_track = self._paper_gen._self_test_tracks(
+                db,
+                student_user_id=job.student_user_id,
+                subject_code=job.subject_code,
+            )
             db.commit()
             generated = self._paper_gen.generate_prepared_self_test(
                 provider=provider,
@@ -356,6 +363,8 @@ class PaperGenJobRunner:
                 student_user_id=job.student_user_id,
                 subject_code=job.subject_code,
                 question_count=total,
+                english_track=english_track,
+                math_track=math_track,
                 on_progress=on_progress,
             )
             if not generated:
@@ -515,6 +524,8 @@ class PaperGenJobRunner:
                     prep_db,
                     subject_code=job.subject_code,
                     exam_year=placement_context.exam_year,
+                    english_track=placement_context.english_track,
+                    math_track=placement_context.math_track,
                 )
                 if not leaves:
                     raise ValueError("syllabus missing for subject")
@@ -550,6 +561,11 @@ class PaperGenJobRunner:
                         prep_db, overview.weak_nodes, leaves, total
                     )
                 )
+                english_track, math_track = self._paper_gen._self_test_tracks(
+                    prep_db,
+                    student_user_id=job.student_user_id,
+                    subject_code=job.subject_code,
+                )
                 prep_db.commit()
                 paper_id = paper.id
                 student_user_id = job.student_user_id
@@ -580,6 +596,8 @@ class PaperGenJobRunner:
                 student_user_id=student_user_id,
                 subject_code=subject_code,
                 question_count=question_count,
+                english_track=english_track,
+                math_track=math_track,
                 on_progress=on_progress,
             )
 

@@ -3,10 +3,12 @@ import Login from "@/pages/Login";
 import Layout from "@/components/Layout";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import StudentsList from "@/pages/admin/StudentsList";
+import AdminStudentExamProfile from "@/pages/admin/StudentExamProfile";
 import StaffList from "@/pages/admin/StaffList";
 import PackagesList from "@/pages/admin/PackagesList";
 import ModelPolicies from "@/pages/admin/ModelPolicies";
 import MyStudents from "@/pages/staff/MyStudents";
+import StaffStudentExamProfile from "@/pages/staff/StudentExamProfile";
 import StudentDetail from "@/pages/org/StudentDetail";
 import Workspace from "@/pages/student/Workspace";
 import Placement from "@/pages/student/Placement";
@@ -33,6 +35,7 @@ export default function App() {
       >
         <Route path="/admin/students" element={<StudentsList />} />
         <Route path="/admin/students/:studentId" element={<StudentDetail />} />
+        <Route path="/admin/students/:studentId/exam-profile" element={<AdminStudentExamProfile />} />
         <Route path="/admin/staff" element={<StaffList />} />
         <Route path="/admin/packages" element={<PackagesList />} />
         <Route path="/admin/model-policies" element={<ModelPolicies />} />
@@ -47,6 +50,7 @@ export default function App() {
       >
         <Route path="/staff/students" element={<MyStudents />} />
         <Route path="/staff/students/:studentId" element={<StudentDetail />} />
+        <Route path="/staff/students/:studentId/exam-profile" element={<StaffStudentExamProfile />} />
       </Route>
 
       <Route

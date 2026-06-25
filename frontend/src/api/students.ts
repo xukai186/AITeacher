@@ -11,6 +11,7 @@ export type Student = {
   open_review_job_count?: number;
   requires_plan_confirmation?: boolean;
   wrong_added_7d?: number;
+  exam_profile_complete?: boolean;
 };
 
 export type CreateStudentBody = {

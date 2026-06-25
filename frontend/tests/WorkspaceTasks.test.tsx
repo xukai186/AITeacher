@@ -42,6 +42,26 @@ function mockFetchRouter() {
           { status: 200 },
         );
       }
+      if (url.includes("/api/student/exam-profile")) {
+        return new Response(
+          JSON.stringify({
+            major_category_code: "management_joint",
+            major_code: "mpacc_joint",
+            major_name: "会计（MPAcc）",
+            english_track: "english_2",
+            math_track: "none",
+            effective_english_track: "english_2",
+            effective_math_track: "none",
+            subject_codes: ["english", "politics"],
+            cet_status: "cet4",
+            cet_score: 520,
+            math_mastery_level: "basic",
+            profile_completed_at: "2026-06-24T13:49:47.641927Z",
+            is_complete: true,
+          }),
+          { status: 200 },
+        );
+      }
       if (url.includes("/api/student/placement/start")) {
         return new Response(
           JSON.stringify({ subjects: [{ subject_code: "english", status: "ready", paper_id: "p1" }] }),
@@ -77,6 +97,15 @@ describe("Workspace tasks", () => {
     mockFetchRouter();
     renderWorkspace();
     await waitFor(() => expect(screen.getByText("英语 学习任务")).toBeTruthy());
+  });
+
+  it("renders exam profile summary when profile is complete", async () => {
+    mockFetchRouter();
+    renderWorkspace();
+    await waitFor(() => expect(screen.getByTestId("exam-profile-summary")).toBeTruthy());
+    expect(screen.getByText("会计（MPAcc）")).toBeTruthy();
+    expect(screen.getByText(/英语二/)).toBeTruthy();
+    expect(screen.getByText(/不考数学/)).toBeTruthy();
   });
 });
 

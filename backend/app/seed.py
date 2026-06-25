@@ -5,6 +5,7 @@ from sqlalchemy import select
 
 from app.auth.security import hash_password
 from app.database import SessionLocal
+from app.seed_exam_majors import seed_exam_majors
 from app.models import (
     Organization,
     Package,
@@ -85,6 +86,8 @@ def main() -> None:
                     assigned_by_user_id=admin.id,
                 )
             )
+
+        seed_exam_majors(db)
 
         db.commit()
         print("Seed complete.")

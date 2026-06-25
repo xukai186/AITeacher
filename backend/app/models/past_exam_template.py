@@ -19,6 +19,8 @@ class PastExamPaperTemplate(Base):
     syllabus_exam_year: Mapped[int] = mapped_column(Integer, nullable=False)
     reference_year: Mapped[int] = mapped_column(Integer, nullable=False)
     title: Mapped[str] = mapped_column(String(240), nullable=False)
+    english_track: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    math_track: Mapped[str | None] = mapped_column(String(20), nullable=True)
 
     sections_json: Mapped[list] = mapped_column(JSONB, nullable=False)
 

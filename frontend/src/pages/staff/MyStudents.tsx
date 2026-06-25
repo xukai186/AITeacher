@@ -22,6 +22,7 @@ export default function MyStudents() {
               <th className="px-4 py-2">邮箱</th>
               <th className="px-4 py-2">考试年份</th>
               <th className="px-4 py-2">学情摘要</th>
+              <th className="px-4 py-2">报考档案</th>
               <th className="px-4 py-2" />
             </tr>
           </thead>
@@ -36,6 +37,19 @@ export default function MyStudents() {
                 </td>
                 <td className="px-4 py-2">
                   <Link
+                    to={`/staff/students/${s.id}/exam-profile`}
+                    className="text-blue-600 hover:underline inline-flex items-center gap-2"
+                  >
+                    报考档案
+                    {s.exam_profile_complete === false && (
+                      <span className="text-[10px] px-2 py-0.5 rounded bg-amber-100 text-amber-800">
+                        未完成
+                      </span>
+                    )}
+                  </Link>
+                </td>
+                <td className="px-4 py-2">
+                  <Link
                     to={`/staff/students/${s.id}`}
                     className="text-blue-600 hover:underline"
                   >
@@ -46,7 +60,7 @@ export default function MyStudents() {
             ))}
             {data.length === 0 && (
               <tr>
-                <td colSpan={5} className="px-4 py-6 text-center text-slate-500">
+                <td colSpan={6} className="px-4 py-6 text-center text-slate-500">
                   暂无分配学员
                 </td>
               </tr>

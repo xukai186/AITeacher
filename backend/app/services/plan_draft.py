@@ -9,6 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models import MasterySnapshot, ModelPolicy, StudentProfile, User
+from app.services.exam_profile import ExamProfileService
 from app.services.model_gateway import ModelGateway, ModelGatewayRequest
 from app.services.report import ReportQuery, ReportService
 
@@ -84,15 +85,25 @@ class PlanDraftService:
         today: date,
     ) -> PlanDraft | None:
         context = self._build_context(db, student_user_id=student_user_id, subject_codes=subject_codes)
+        effective_subject_codes = self._effective_subject_codes(subject_codes, context)
+        if not effective_subject_codes:
+            return None
         budget_dates = [day.isoformat() for day in self._budget_dates(today)]
         prompt = "\n".join(
             [
                 "你是考研机构总规划老师。根据学生摸底与学情，起草首版学习计划。",
                 f"考试年份：{context.get('exam_year') or '未设置'}",
-                f"启用科目：{json.dumps(subject_codes, ensure_ascii=False)}",
+                f"报考专业：{context.get('major_name') or '未设置'}",
+                f"英语科目：{context.get('english_track') or '未设置'}",
+                f"数学科目：{context.get('math_track') or '未设置'}",
+                f"CET状态：{context.get('cet_status') or '未填写'}",
+                f"数学基础：{context.get('math_mastery_level') or '未填写'}",
+                f"启用科目：{json.dumps(effective_subject_codes, ensure_ascii=False)}",
                 "学情摘要：",
                 json.dumps(context.get("subjects") or [], ensure_ascii=False),
                 "",
+                "规则约束：若数学科目为 none，严禁输出 math 科目阶段。",
+                "阶段备注建议：英语结合 CET 状态给出重点；数学结合数学基础给出难度梯度。",
                 f"请为接下来 7 天（{budget_dates[0]} 至 {budget_dates[-1]}）生成计划。",
                 "只输出 STRICT JSON，不要 markdown：",
                 json.dumps(
@@ -104,7 +115,7 @@ class PlanDraftService:
                             {"date": budget_dates[0], "minutes": DEFAULT_DAILY_MINUTES}
                         ],
                         "subjects": {
-                            subject_codes[0] if subject_codes else "english": {
+                            effective_subject_codes[0]: {
                                 "phases": [
                                     {
                                         "title": "阶段名称",
@@ -128,7 +139,9 @@ class PlanDraftService:
                 params=policy.params or {},
             )
         )
-        return self._parse_llm_draft(resp.text, subject_codes=subject_codes, today=today)
+        return self._parse_llm_draft(
+            resp.text, subject_codes=effective_subject_codes, today=today
+        )
 
     def _draft_with_rules(
         self,
@@ -139,6 +152,7 @@ class PlanDraftService:
         today: date,
     ) -> PlanDraft:
         context = self._build_context(db, student_user_id=student_user_id, subject_codes=subject_codes)
+        effective_subject_codes = self._effective_subject_codes(subject_codes, context)
         weak_subjects = [
             s["subject_code"]
             for s in context.get("subjects", [])
@@ -160,7 +174,7 @@ class PlanDraftService:
             for day in self._budget_dates(today)
         ]
         subject_phases_json: dict[str, list[dict]] = {}
-        for code in subject_codes:
+        for code in effective_subject_codes:
             label = SUBJECT_LABELS.get(code, code)
             weak = next(
                 (s for s in context.get("subjects", []) if s["subject_code"] == code),
@@ -172,6 +186,24 @@ class PlanDraftService:
                 if weak_count
                 else f"{label} 基础巩固与题型熟悉。"
             )
+            if code == "english":
+                cet_status = context.get("cet_status")
+                if cet_status == "not_taken":
+                    notes = f"{notes} CET 未通过，强化词汇语法与基础阅读。"
+                elif cet_status == "cet4":
+                    notes = f"{notes} CET4 已通过，重点提升阅读速度与写作结构。"
+                elif cet_status == "cet6":
+                    notes = f"{notes} CET6 已通过，增加高阶阅读、翻译与表达训练。"
+            if code == "math":
+                mastery = context.get("math_mastery_level")
+                if mastery == "zero":
+                    notes = f"{notes} 数学基础为 zero，从核心概念和基础题型起步。"
+                elif mastery == "basic":
+                    notes = f"{notes} 数学基础为 basic，先稳固公式再推进综合题。"
+                elif mastery == "good":
+                    notes = f"{notes} 数学基础为 good，增加中高难度综合训练。"
+                elif mastery == "strong":
+                    notes = f"{notes} 数学基础为 strong，重点攻克压轴题与限时训练。"
             subject_phases_json[code] = [
                 {"title": f"{label}起步阶段", "days": 7, "notes": notes}
             ]
@@ -188,11 +220,15 @@ class PlanDraftService:
         student_user_id: uuid.UUID,
         subject_codes: list[str],
     ) -> dict:
+        effective_profile = ExamProfileService().get_effective(db, student_user_id)
         profile = db.execute(
             select(StudentProfile).where(StudentProfile.user_id == student_user_id)
         ).scalar_one_or_none()
+        effective_codes = list(dict.fromkeys(subject_codes))
+        if effective_profile is not None and effective_profile.math_track == "none":
+            effective_codes = [code for code in effective_codes if code != "math"]
         subjects: list[dict] = []
-        for code in subject_codes:
+        for code in effective_codes:
             overview = ReportService.overview(
                 db,
                 ReportQuery(student_user_id=student_user_id, subject_code=code),
@@ -217,8 +253,22 @@ class PlanDraftService:
             )
         return {
             "exam_year": profile.exam_year if profile else None,
+            "major_name": effective_profile.major_name if effective_profile else None,
+            "english_track": effective_profile.english_track if effective_profile else None,
+            "math_track": effective_profile.math_track if effective_profile else None,
+            "cet_status": effective_profile.cet_status if effective_profile else None,
+            "math_mastery_level": (
+                effective_profile.math_mastery_level if effective_profile else None
+            ),
             "subjects": subjects,
         }
+
+    @staticmethod
+    def _effective_subject_codes(subject_codes: list[str], context: dict) -> list[str]:
+        codes = list(dict.fromkeys(subject_codes))
+        if context.get("math_track") == "none":
+            codes = [code for code in codes if code != "math"]
+        return codes
 
     @staticmethod
     def _budget_dates(today: date) -> list[date]:
