@@ -24,12 +24,14 @@
 
 ## 2. 已确认的产品决策
 
-| 维度 | 决策 |
-|------|------|
-| 轻量修订生效 | **混合（C）**：分科阶段/周目标/小预算调整直接生效；`daily_time_budget` 总变动 **>15%** 走 P12 `pending_version` 待学生确认 |
-| 任务权重范围 | **两层（C）**：跨科 `trim` 保护弱项 + 次日 `generate_daily_tasks` 弱项多排 |
-| 触发入口 | 管理员/员工 `PUT .../exam-profile`（档案已确认后） |
-| 卷种/专业/科目变更 | **不**走轻量修订，沿用现有全量逻辑（作废摸底 + `create_initial_plans`） |
+
+| 维度         | 决策                                                                                          |
+| ---------- | ------------------------------------------------------------------------------------------- |
+| 轻量修订生效     | **混合（C）**：分科阶段/周目标/小预算调整直接生效；`daily_time_budget` 总变动 **>15%** 走 P12 `pending_version` 待学生确认 |
+| 任务权重范围     | **两层（C）**：跨科 `trim` 保护弱项 + 次日 `generate_daily_tasks` 弱项多排                                   |
+| 触发入口       | 管理员/员工 `PUT .../exam-profile`（档案已确认后）                                                       |
+| 卷种/专业/科目变更 | **不**走轻量修订，沿用现有全量逻辑（作废摸底 + `create_initial_plans`）                                          |
+
 
 ---
 
@@ -39,11 +41,13 @@
 
 在 `admin_exam_profile` / `staff_exam_profile` 的 `PUT` 处理中，`db.flush()` 后比较 **变更前** 与 **变更后** 的 `EffectiveExamProfile`：
 
-| 变更类型 | 字段 | 行为 |
-|----------|------|------|
-| 结构变更 | `major_*`、`english_track`、`math_track`、`subject_codes` | 现有：`invalidate_placement_on_track_change` + 同步科目；**不**在本期新增全量 replan（若尚未做可保持现状） |
-| 基础水平变更 | `cet_status`、`cet_score`、`math_mastery_level` | **轻量修订**（见 §4） |
-| 档案未完成 | `profile_completed_at is null` | 仅保存档案，不修订计划 |
+
+| 变更类型   | 字段                                                     | 行为                                                                              |
+| ------ | ------------------------------------------------------ | ------------------------------------------------------------------------------- |
+| 结构变更   | `major_`*、`english_track`、`math_track`、`subject_codes` | 现有：`invalidate_placement_on_track_change` + 同步科目；**不**在本期新增全量 replan（若尚未做可保持现状） |
+| 基础水平变更 | `cet_status`、`cet_score`、`math_mastery_level`          | **轻量修订**（见 §4）                                                                  |
+| 档案未完成  | `profile_completed_at is null`                         | 仅保存档案，不修订计划                                                                     |
+
 
 **轻量修订前置条件：** `profile_completed_at is not None` 且存在 `MasterPlan.current_version_id`。
 
@@ -85,11 +89,13 @@
 - `weekly_goals_json` — 可随 CET/数学调整描述（如「强化英语词汇语法」）
 - `daily_time_budget_json` — 可选规则调整，示例：
 
-| 条件 | 建议调整 |
-|------|----------|
-| `cet_status = not_taken` | 未来 7 日预算 +10 分钟/天（总量计入 change_ratio） |
-| `math_mastery_level = zero` | 未来 7 日预算 +10 分钟/天 |
-| `cet6` + `math strong` | 预算不变或 -5 分钟/天（可选，规则层实现时取保守默认：不变） |
+
+| 条件                          | 建议调整                                 |
+| --------------------------- | ------------------------------------ |
+| `cet_status = not_taken`    | 未来 7 日预算 +10 分钟/天（总量计入 change_ratio） |
+| `math_mastery_level = zero` | 未来 7 日预算 +10 分钟/天                    |
+| `cet6` + `math strong`      | 预算不变或 -5 分钟/天（可选，规则层实现时取保守默认：不变）     |
+
 
 调用 `MasterPlanActivationService.propose_version`：
 
@@ -119,22 +125,26 @@
 
 **英语**（科目 `english` 开通时）：
 
-| `cet_status` | 权重 |
-|--------------|------|
-| `not_taken` | 4 |
-| `null` / 未填 | 3 |
-| `cet4` | 3 |
-| `cet6` | 2 |
+
+| `cet_status` | 权重  |
+| ------------ | --- |
+| `not_taken`  | 4   |
+| `null` / 未填  | 3   |
+| `cet4`       | 3   |
+| `cet6`       | 2   |
+
 
 **数学**（科目 `math` 开通且 `math_track != none`）：
 
-| `math_mastery_level` | 权重 |
-|----------------------|------|
-| `zero` | 4 |
-| `basic` | 3 |
-| `null` / 未填 | 3 |
-| `good` | 2 |
-| `strong` | 1 |
+
+| `math_mastery_level` | 权重  |
+| -------------------- | --- |
+| `zero`               | 4   |
+| `basic`              | 3   |
+| `null` / 未填          | 3   |
+| `good`               | 2   |
+| `strong`             | 1   |
+
 
 **政治**（`politics`）：基准权重 **2**（无档案信号时不变）。
 
@@ -151,11 +161,13 @@
 
 在 `SubjectAgentService.apply_report_recommendations` 末尾（report 建议落地后）：
 
-| 条件 | 动作 |
-|------|------|
-| `english` + `cet_status in (not_taken, null)` | 幂等追加 1 条 `study` 任务，标题如「英语基础巩固」，`est_minutes=30`，`payload_json.source=exam_profile_boost` |
-| `math` + `math_mastery_level in (zero, basic, null)` | 同上，「数学基础巩固」 |
-| `cet6` / `math strong` | 不追加 |
+
+| 条件                                                   | 动作                                                                                        |
+| ---------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| `english` + `cet_status in (not_taken, null)`        | 幂等追加 1 条 `study` 任务，标题如「英语基础巩固」，`est_minutes=30`，`payload_json.source=exam_profile_boost` |
+| `math` + `math_mastery_level in (zero, basic, null)` | 同上，「数学基础巩固」                                                                               |
+| `cet6` / `math strong`                               | 不追加                                                                                       |
+
 
 幂等键：`_task_ref_id(..., rec_type="study", knowledge_node_id="exam_profile_boost")` 或专用 ref 命名空间，避免重复创建。
 
@@ -165,10 +177,12 @@
 
 ## 6. 权限与界面
 
-| 操作 | 管理员 | 员工 | 学生 |
-|------|--------|------|------|
-| 修改 CET/数学触发轻量修订 | ✅ | ✅（负责学员） | ❌ |
-| 查看修订后总计划 | ✅ | ✅ | ✅（含 pending 确认） |
+
+| 操作              | 管理员 | 员工      | 学生              |
+| --------------- | --- | ------- | --------------- |
+| 修改 CET/数学触发轻量修订 | ✅   | ✅（负责学员） | ❌               |
+| 查看修订后总计划        | ✅   | ✅       | ✅（含 pending 确认） |
+
 
 **前端：** 本期无新页面。学生总计划页已有 P12 待确认流程；档案 PUT 成功后老师端可无感（可选 toast「计划已根据基础水平更新」— 非必须）。
 
@@ -176,14 +190,16 @@
 
 ## 7. 异常与边界
 
-| 场景 | 处理 |
-|------|------|
-| 档案未完成 | 不轻量修订 |
-| 无 MasterPlan | fallback `create_initial_plans` |
-| 仅改 `cet_score` 数值、status 不变 | 仍触发轻量修订（分数可能影响规则文案） |
-| 同时改 track + CET | 走结构变更路径，**不**轻量修订 |
-| `math_track=none` | 数学权重与数学 boost 任务均跳过 |
-| LLM planning policy 非 mock | 轻量修订 **仅用规则层**（与初始计划 mock 兜底一致），避免异步 LLM 阻塞 PUT |
+
+| 场景                          | 处理                                              |
+| --------------------------- | ----------------------------------------------- |
+| 档案未完成                       | 不轻量修订                                           |
+| 无 MasterPlan                | fallback `create_initial_plans`                 |
+| 仅改 `cet_score` 数值、status 不变 | 仍触发轻量修订（分数可能影响规则文案）                             |
+| 同时改 track + CET             | 走结构变更路径，**不**轻量修订                               |
+| `math_track=none`           | 数学权重与数学 boost 任务均跳过                             |
+| LLM planning policy 非 mock  | 轻量修订 **仅用规则层**（与初始计划 mock 兜底一致），避免异步 LLM 阻塞 PUT |
+
 
 ---
 
@@ -213,17 +229,19 @@
 
 ## 9. 实现要点（文件级）
 
-| 文件 | 变更 |
-|------|------|
-| `backend/app/services/exam_profile_weights.py` | **新建** `ExamProfileWeightService` |
-| `backend/app/services/planning.py` | `light_revise_from_profile` |
-| `backend/app/services/plan_draft.py` | 抽取 `phases_for_subject(code, context)` 供初始/轻量共用 |
-| `backend/app/services/master_planner.py` | `subject_weights_for_student` 合并档案权重 |
-| `backend/app/services/subject_agent.py` | 弱项 boost 任务 |
-| `backend/app/routers/admin_exam_profile.py` | PUT 后分流调用轻量修订 |
-| `backend/app/routers/staff_exam_profile.py` | 同上 |
-| `backend/tests/test_exam_profile_light_revise.py` | **新建** |
-| `backend/tests/test_exam_profile_task_weights.py` | **新建** |
+
+| 文件                                                | 变更                                              |
+| ------------------------------------------------- | ----------------------------------------------- |
+| `backend/app/services/exam_profile_weights.py`    | **新建** `ExamProfileWeightService`               |
+| `backend/app/services/planning.py`                | `light_revise_from_profile`                     |
+| `backend/app/services/plan_draft.py`              | 抽取 `phases_for_subject(code, context)` 供初始/轻量共用 |
+| `backend/app/services/master_planner.py`          | `subject_weights_for_student` 合并档案权重            |
+| `backend/app/services/subject_agent.py`           | 弱项 boost 任务                                     |
+| `backend/app/routers/admin_exam_profile.py`       | PUT 后分流调用轻量修订                                   |
+| `backend/app/routers/staff_exam_profile.py`       | 同上                                              |
+| `backend/tests/test_exam_profile_light_revise.py` | **新建**                                          |
+| `backend/tests/test_exam_profile_task_weights.py` | **新建**                                          |
+
 
 ---
 
@@ -251,8 +269,11 @@ ExamProfileWeightService.subject_weights
 
 ## 11. 与上期 spec 关系
 
-| 上期 §5.4 / §5.5 | 本期 |
-|------------------|------|
-| 轻量修订 | §4 实现 |
-| 每日任务按 CET/数学调权重 | §5 实现 |
+
+| 上期 §5.4 / §5.5  | 本期             |
+| --------------- | -------------- |
+| 轻量修订            | §4 实现          |
+| 每日任务按 CET/数学调权重 | §5 实现          |
 | 下期：机构专业/专业课/考纲树 | 仍 OUT OF SCOPE |
+
+
