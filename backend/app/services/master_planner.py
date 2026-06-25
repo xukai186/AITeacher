@@ -57,10 +57,29 @@ def scheduled_minutes_for_date(db: Session, student_user_id: uuid.UUID, day: dat
 
 
 def subject_weights_for_student(db: Session, student_user_id: uuid.UUID) -> dict[str, int]:
-    """Higher weight = more protected when trimming across subjects (package order)."""
+    """Higher weight = more protected when trimming across subjects."""
+    from app.services.exam_profile_weights import ExamProfileWeightService
+
     profile = db.execute(
         select(StudentProfile).where(StudentProfile.user_id == student_user_id)
     ).scalar_one_or_none()
+
+    exam_weights = ExamProfileWeightService().subject_weights(db, student_user_id)
+    if exam_weights:
+        codes: list[str] = []
+        if profile is not None and profile.package_id is not None:
+            pkg = db.get(Package, profile.package_id)
+            if pkg is not None and pkg.subject_codes:
+                codes = list(pkg.subject_codes)
+        if not codes:
+            codes = list(exam_weights.keys())
+
+        n = len(codes)
+        package_rank = {code: n - idx for idx, code in enumerate(codes)}
+        return {
+            code: exam_weights.get(code, 0) * 10 + package_rank.get(code, 0)
+            for code in exam_weights
+        }
 
     codes: list[str] = []
     if profile is not None and profile.package_id is not None:

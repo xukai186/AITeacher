@@ -8,10 +8,76 @@ from sqlalchemy.orm import Session
 
 from app.models import MasterPlan, MasterPlanVersion, StudentSubject, SubjectPlan, SubjectPlanVersion, User
 from app.services.exam_profile import ExamProfileService
+from app.services.master_plan_activation import MasterPlanActivationService, ProposeResult
 from app.services.plan_draft import PlanDraftService
 
 
 class PlanningService:
+    def light_revise_from_profile(
+        self, db: Session, student_user_id: uuid.UUID
+    ) -> ProposeResult | None:
+        master = db.execute(
+            select(MasterPlan).where(MasterPlan.student_user_id == student_user_id)
+        ).scalar_one_or_none()
+        if master is None or master.current_version_id is None:
+            self.create_initial_plans(db, student_user_id)
+            return None
+
+        draft = PlanDraftService().light_revise_draft(db, student_user_id=student_user_id)
+        for subject_code, phases in draft.subject_phases_json.items():
+            self._bump_subject_plan_version(
+                db,
+                student_user_id=student_user_id,
+                subject_code=subject_code,
+                phases_json=phases,
+            )
+
+        activation = MasterPlanActivationService()
+        current = db.get(MasterPlanVersion, master.current_version_id)
+        weekly_goals = draft.weekly_goals_json
+        if current is not None and current.weekly_goals_json:
+            weekly_goals = draft.weekly_goals_json or current.weekly_goals_json
+
+        return activation.propose_version(
+            db,
+            plan=master,
+            daily_time_budget_json=draft.daily_time_budget_json,
+            weekly_goals_json=weekly_goals,
+            source="ai",
+        )
+
+    @staticmethod
+    def _bump_subject_plan_version(
+        db: Session,
+        *,
+        student_user_id: uuid.UUID,
+        subject_code: str,
+        phases_json: list[dict],
+    ) -> None:
+        plan = db.execute(
+            select(SubjectPlan).where(
+                SubjectPlan.student_user_id == student_user_id,
+                SubjectPlan.subject_code == subject_code,
+            )
+        ).scalar_one_or_none()
+        if plan is None:
+            return
+        current_ver = (
+            db.get(SubjectPlanVersion, plan.current_version_id)
+            if plan.current_version_id is not None
+            else None
+        )
+        next_version = (current_ver.version + 1) if current_ver is not None else 1
+        ver = SubjectPlanVersion(
+            plan_id=plan.id,
+            version=next_version,
+            source="ai",
+            phases_json=phases_json,
+        )
+        db.add(ver)
+        db.flush()
+        plan.current_version_id = ver.id
+
     def create_initial_plans(self, db: Session, student_user_id: uuid.UUID) -> None:
         subject_codes = list(
             db.execute(
