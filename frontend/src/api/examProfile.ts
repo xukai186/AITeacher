@@ -25,15 +25,17 @@ export type ExamMajor = {
 export type StudentExamProfile = {
   major_category_code: string;
   major_code: string;
+  major_name: string;
   english_track: EnglishTrack | null;
   math_track: MathTrack | null;
+  effective_english_track: EnglishTrack;
+  effective_math_track: MathTrack;
   subject_codes: SubjectCode[];
   cet_status: CetStatus;
   cet_score: number | null;
   math_mastery_level: MathMasteryLevel;
   profile_completed_at: string | null;
-  created_at: string;
-  updated_at: string;
+  is_complete: boolean;
 };
 
 export type UpsertStudentExamProfileInput = {
