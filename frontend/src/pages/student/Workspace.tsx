@@ -1,11 +1,12 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { fetchStudentMe } from "@/api/me";
 import { startPlacement } from "@/api/placement";
 import { fetchTodayTasks } from "@/api/tasks";
 import { generateSelfTest } from "@/api/selfTests";
 import { getStudentExamProfile } from "@/api/examProfile";
+import { fetchRoadmap } from "@/api/roadmap";
 import ChatPanel from "@/components/chat/ChatPanel";
 import { usePaperGenProgress } from "@/hooks/usePaperGenProgress";
 
@@ -56,6 +57,11 @@ export default function Workspace() {
     queryFn: getStudentExamProfile,
   });
 
+  const roadmap = useQuery({
+    queryKey: ["student", "roadmap"],
+    queryFn: fetchRoadmap,
+  });
+
   const paperGen = usePaperGenProgress();
 
   const start = useMutation({
@@ -101,6 +107,8 @@ export default function Workspace() {
   const profileIncomplete =
     examProfile.isSuccess && (!profile || !profile.profile_completed_at);
   const profileComplete = Boolean(profile?.profile_completed_at);
+  const roadmapJob = roadmap.data?.generation_job;
+  const roadmapPending = Boolean(roadmap.data?.pending_version);
 
   return (
     <div className="grid grid-cols-12 gap-4 h-full">
@@ -109,6 +117,23 @@ export default function Workspace() {
           <h1 className="text-xl font-semibold">今日计划</h1>
           <div className="text-sm text-slate-500">考试年份：{data.exam_year}</div>
         </header>
+
+        {(roadmapJob?.status === "running" || roadmapJob?.status === "pending") && (
+          <div className="rounded border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-900">
+            正在生成全年学习计划…
+          </div>
+        )}
+        {roadmapPending && (
+          <div className="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900 flex justify-between items-center gap-2">
+            <span>全年学习计划已生成，请前往总计划页确认</span>
+            <Link
+              to="/student/master-plan"
+              className="shrink-0 px-2 py-1 rounded bg-amber-800 text-white text-xs"
+            >
+              去确认
+            </Link>
+          </div>
+        )}
 
         {examProfile.isLoading && (
           <p className="text-sm text-slate-500">加载报考档案…</p>

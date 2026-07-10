@@ -113,7 +113,7 @@ def test_staff_cannot_edit_unassigned_student(client, db_session):
     assert resp.status_code == 403
 
 
-def test_confirm_triggers_create_initial_plans(client, db_session, monkeypatch):
+def test_confirm_does_not_create_initial_plans(client, db_session, monkeypatch):
     seed_exam_majors(db_session)
     org, _admin = _seed_admin(db_session)
     student = make_user(db_session, org, role=UserRole.student, email="confirm-student@demo.example")
@@ -145,7 +145,7 @@ def test_confirm_triggers_create_initial_plans(client, db_session, monkeypatch):
     body = resp.json()
     assert body["is_complete"] is True
     assert body["profile_completed_at"] is not None
-    assert calls == [student.id]
+    assert calls == []
 
 
 def test_student_can_read_own_profile(client, db_session):

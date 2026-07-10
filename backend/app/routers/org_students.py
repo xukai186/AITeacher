@@ -1,7 +1,7 @@
 import uuid
 from datetime import date
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, Query
 from sqlalchemy.orm import Session
 
 from app.auth.permissions import assert_can_access_student, require_staff_or_admin
@@ -15,10 +15,13 @@ from app.schemas.org_student import (
     OrgPaperSummaryOut,
     PaperActionOut,
 )
+from app.schemas.roadmap import RoadmapRegenerateOut, StudyRoadmapStateOut, StudyRoadmapVersionOut
 from app.schemas.task import TodayTasksOut
 from app.schemas.wrong_book import WrongBookItemOut
 from app.services.admin_intervention import AdminInterventionService
 from app.services.org_student import OrgStudentService
+from app.services.roadmap_activation import RoadmapActivationService
+from app.services.roadmap_generation_jobs import RoadmapGenerationJobService, kick_roadmap_job
 from app.services.wrong_book import WrongBookService
 
 router = APIRouter(prefix="/org/students", tags=["org-students"])
@@ -121,3 +124,38 @@ def student_wrong_book(
         offset=offset,
     )
     return [WrongBookItemOut.model_validate(i) for i in items]
+
+
+def _roadmap_state_out(raw: dict) -> StudyRoadmapStateOut:
+    active = raw.get("active_version")
+    pending = raw.get("pending_version")
+    job = raw.get("generation_job")
+    return StudyRoadmapStateOut(
+        roadmap_id=raw.get("roadmap_id"),
+        status=raw.get("status"),
+        active_version=StudyRoadmapVersionOut.model_validate(active) if active else None,
+        pending_version=StudyRoadmapVersionOut.model_validate(pending) if pending else None,
+        generation_job=job,
+    )
+
+
+@router.get("/{student_id}/roadmap", response_model=StudyRoadmapStateOut)
+def student_roadmap(
+    student: User = Depends(_student_dep),
+    db: Session = Depends(get_db),
+) -> StudyRoadmapStateOut:
+    raw = RoadmapActivationService().get_state(db, student_user_id=student.id)
+    return _roadmap_state_out(raw)
+
+
+@router.post("/{student_id}/roadmap/regenerate", response_model=RoadmapRegenerateOut)
+def regenerate_student_roadmap(
+    student: User = Depends(_student_dep),
+    db: Session = Depends(get_db),
+    background_tasks: BackgroundTasks = BackgroundTasks(),
+) -> RoadmapRegenerateOut:
+    result = RoadmapGenerationJobService().enqueue(db, student_user_id=student.id)
+    db.commit()
+    if result.created:
+        background_tasks.add_task(kick_roadmap_job, result.job_id)
+    return RoadmapRegenerateOut(job_id=result.job_id, created=result.created)

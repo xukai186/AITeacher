@@ -12,6 +12,7 @@ from app.models import MasterySnapshot, ModelPolicy, StudentProfile, StudentSubj
 from app.services.exam_profile import ExamProfileService
 from app.services.model_gateway import ModelGateway, ModelGatewayRequest
 from app.services.report import ReportQuery, ReportService
+from app.services.roadmap_context import MonthSlice, RoadmapContextService
 
 SUBJECT_LABELS: dict[str, str] = {
     "english": "英语",
@@ -45,6 +46,9 @@ class PlanDraftService:
         today: date | None = None,
     ) -> PlanDraft:
         day = today or date.today()
+        month_slice = RoadmapContextService().current_month_slice(
+            db, student_user_id=student_user_id, today=day
+        )
         policy = self._policy(db, org_id)
         if policy is not None and policy.provider != "mock":
             try:
@@ -56,14 +60,18 @@ class PlanDraftService:
                     today=day,
                 )
                 if drafted is not None:
-                    return drafted
+                    return self._apply_month_slice(drafted, month_slice, day)
             except Exception:
                 pass
-        return self._draft_with_rules(
+        return self._apply_month_slice(
+            self._draft_with_rules(
             db,
             student_user_id=student_user_id,
             subject_codes=subject_codes,
             today=day,
+        ),
+            month_slice,
+            day,
         )
 
     def light_revise_draft(
@@ -254,6 +262,51 @@ class PlanDraftService:
             resp.text, subject_codes=effective_subject_codes, today=today
         )
 
+    def _apply_month_slice(
+        self, draft: PlanDraft, month_slice: MonthSlice | None, today: date
+    ) -> PlanDraft:
+        if month_slice is None:
+            return draft
+        weekly_goals = list(draft.weekly_goals_json)
+        weekly_goals.insert(
+            0,
+            {
+                "title": f"本月：{month_slice.label}",
+                "description": "按全年路线图执行本月各科重点。",
+            },
+        )
+        daily_budget: list[dict] = []
+        total_weekly_minutes = 0
+        for code, block in month_slice.subjects.items():
+            if isinstance(block, dict):
+                total_weekly_minutes += int(block.get("weekly_hours_hint") or 0) * 60
+        daily_minutes = self._clamp_minutes(
+            total_weekly_minutes // 7 if total_weekly_minutes else DEFAULT_DAILY_MINUTES
+        )
+        for budget_day in self._budget_dates(today):
+            daily_budget.append({"date": budget_day.isoformat(), "minutes": daily_minutes})
+        subject_phases = dict(draft.subject_phases_json)
+        for code, block in month_slice.subjects.items():
+            if not isinstance(block, dict):
+                continue
+            focus = str(block.get("focus") or "").strip()
+            nodes = block.get("syllabus_nodes") or []
+            notes = str(block.get("notes") or "").strip()
+            node_text = "、".join(str(n) for n in nodes if n)
+            label = SUBJECT_LABELS.get(code, code)
+            subject_phases[code] = [
+                {
+                    "title": f"{label} · {month_slice.label}",
+                    "days": 7,
+                    "notes": notes or f"本月重点：{focus or node_text}",
+                }
+            ]
+        return PlanDraft(
+            weekly_goals_json=weekly_goals,
+            daily_time_budget_json=daily_budget,
+            subject_phases_json=subject_phases,
+        )
+
     def _draft_with_rules(
         self,
         db: Session,
@@ -325,7 +378,11 @@ class PlanDraftService:
                     "label": SUBJECT_LABELS.get(code, code),
                     "weak_node_count": len(overview.weak_nodes),
                     "weak_nodes": [
-                        {"name": w.name, "level": w.level} for w in overview.weak_nodes[:5]
+                        {
+                            "name": w.knowledge_node_name,
+                            "wrong_count": w.wrong_count,
+                        }
+                        for w in overview.weak_nodes[:5]
                     ],
                     "recommendations": overview.recommendations[:3],
                     "mastery_levels": len(mastery or {}),

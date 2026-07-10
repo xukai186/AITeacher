@@ -46,6 +46,59 @@ class PlanningService:
             source="ai",
         )
 
+    def refresh_tactical_from_roadmap(
+        self, db: Session, student_user_id: uuid.UUID, *, today: date | None = None
+    ) -> bool:
+        """Regenerate 7-day tactical plans using the current roadmap month slice."""
+        master = db.execute(
+            select(MasterPlan).where(MasterPlan.student_user_id == student_user_id)
+        ).scalar_one_or_none()
+        if master is None or master.current_version_id is None:
+            return False
+
+        subject_codes = list(
+            db.execute(
+                select(StudentSubject.subject_code).where(
+                    StudentSubject.student_user_id == student_user_id,
+                    StudentSubject.enabled.is_(True),
+                )
+            )
+            .scalars()
+            .all()
+        )
+        if not subject_codes:
+            return False
+
+        student = db.get(User, student_user_id)
+        if student is None or student.org_id is None:
+            return False
+
+        day = today or date.today()
+        draft = PlanDraftService().draft_initial_plans(
+            db,
+            student_user_id=student_user_id,
+            org_id=student.org_id,
+            subject_codes=subject_codes,
+            today=day,
+        )
+        for subject_code, phases in draft.subject_phases_json.items():
+            self._bump_subject_plan_version(
+                db,
+                student_user_id=student_user_id,
+                subject_code=subject_code,
+                phases_json=phases,
+            )
+
+        activation = MasterPlanActivationService()
+        activation.propose_version(
+            db,
+            plan=master,
+            daily_time_budget_json=draft.daily_time_budget_json,
+            weekly_goals_json=draft.weekly_goals_json,
+            source="ai",
+        )
+        return True
+
     @staticmethod
     def _bump_subject_plan_version(
         db: Session,
