@@ -29,9 +29,8 @@ from app.schemas.placement import (
 )
 from app.services.mastery import MasteryService
 from app.services.exam_profile import ExamProfileService
+from app.services.roadmap_generation_jobs import RoadmapGenerationJobService
 from app.services.plan_review_jobs import PlanReviewJobService
-from app.services.planning import PlanningService
-from app.services.tasks import TaskGenerator
 from app.services.learning_events import LearningEventService
 from app.services.wrong_book import WrongBookService
 from app.services.paper_gen import DEFAULT_QUESTION_COUNT, PaperGenService, is_mock_placement_stem
@@ -199,6 +198,39 @@ class PlacementService:
                 )
             )
         return subjects
+
+    @classmethod
+    def all_subjects_completed(cls, db: Session, student_user_id: uuid.UUID) -> bool:
+        enabled_codes = list(
+            db.execute(
+                select(StudentSubject.subject_code).where(
+                    StudentSubject.student_user_id == student_user_id,
+                    StudentSubject.enabled.is_(True),
+                )
+            )
+            .scalars()
+            .all()
+        )
+        if not enabled_codes:
+            return False
+        for code in enabled_codes:
+            paper = db.execute(
+                select(PlacementPaper).where(
+                    PlacementPaper.student_user_id == student_user_id,
+                    PlacementPaper.subject_code == code,
+                )
+            ).scalar_one_or_none()
+            if paper is None:
+                return False
+            submitted = db.execute(
+                select(PlacementSubmission.id).where(
+                    PlacementSubmission.paper_id == paper.id,
+                    PlacementSubmission.student_user_id == student_user_id,
+                )
+            ).scalar_one_or_none()
+            if submitted is None:
+                return False
+        return True
 
     @classmethod
     def start(
@@ -429,8 +461,11 @@ class PlacementService:
         else:
             existing.mastery_json = mastery_levels
 
-        PlanningService().create_initial_plans(db, student_user_id=student_user_id)
-        TaskGenerator().generate_next_7_days(db, student_user_id=student_user_id, today=date.today())
+        roadmap_job_id = None
+        all_complete = cls.all_subjects_completed(db, student_user_id)
+        if all_complete:
+            enqueued = RoadmapGenerationJobService().enqueue(db, student_user_id=student_user_id)
+            roadmap_job_id = enqueued.job_id
 
         db.flush()
         WrongBookService.ingest_from_placement_submission(db, submission.id)
@@ -455,6 +490,8 @@ class PlacementService:
             paper_id=paper_id,
             total_score=total_score,
             mastery_json=mastery_levels,
+            roadmap_job_id=roadmap_job_id,
+            all_placement_complete=all_complete,
         )
 
     @staticmethod

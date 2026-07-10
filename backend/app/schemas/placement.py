@@ -64,3 +64,5 @@ class PlacementSubmitOut(BaseModel):
     paper_id: uuid.UUID
     total_score: int
     mastery_json: dict
+    roadmap_job_id: uuid.UUID | None = None
+    all_placement_complete: bool = False

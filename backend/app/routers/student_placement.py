@@ -16,6 +16,7 @@ from app.schemas.placement import (
 )
 from app.services.placement import PlacementService
 from app.services.paper_gen_jobs import PaperGenJobService, kick_paper_gen_job, should_kick_paper_gen_job
+from app.services.roadmap_generation_jobs import kick_roadmap_job
 from app.models import PlacementPaper
 
 router = APIRouter(prefix="/student/placement", tags=["student-placement"])
@@ -68,7 +69,11 @@ def get_placement_paper(
 def submit_placement(
     paper_id: uuid.UUID,
     payload: PlacementSubmitIn,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     student: User = Depends(require_roles(UserRole.student)),
 ) -> PlacementSubmitOut:
-    return PlacementService.submit(db, student.id, paper_id, payload)
+    out = PlacementService.submit(db, student.id, paper_id, payload)
+    if out.roadmap_job_id is not None:
+        background_tasks.add_task(kick_roadmap_job, out.roadmap_job_id)
+    return out

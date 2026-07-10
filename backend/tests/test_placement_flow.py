@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from sqlalchemy import select
 
 from app.auth.security import hash_password
-from app.models import DailyTask, MasterPlan, MasterPlanVersion, MasterySnapshot, PlacementPaper, PlacementQuestion, PlacementResult, StudentExamProfile, StudentProfile, StudentSubject, SubjectPlan, SubjectPlanVersion, UserRole, WrongBookItem
+from app.models import DailyTask, MasterPlan, MasterPlanVersion, MasterySnapshot, PlacementPaper, PlacementQuestion, PlacementResult, StudentExamProfile, StudentProfile, StudentSubject, StudyRoadmap, SubjectPlan, SubjectPlanVersion, UserRole, WrongBookItem
 from app.seed_exam_majors import seed_exam_majors
 from tests.factories import make_org, make_user
 from tests.paper_gen_job_helpers import start_placement_and_wait
@@ -108,32 +108,23 @@ def test_student_can_submit_placement_and_get_result(client, db_session):
     assert out["paper_id"] == paper_id
     assert out["total_score"] > 0
     assert db_session.query(PlacementResult).count() >= 1
+    assert out["all_placement_complete"] is True
+    assert out["roadmap_job_id"] is not None
     assert (
         db_session.query(MasterySnapshot)
         .filter(MasterySnapshot.student_user_id == student.id)
         .count()
         == 1
     )
+    roadmap = (
+        db_session.query(StudyRoadmap).filter(StudyRoadmap.student_user_id == student.id).one_or_none()
+    )
+    assert roadmap is not None
+    assert roadmap.pending_version_id is not None
     assert (
         db_session.query(MasterPlan).filter(MasterPlan.student_user_id == student.id).count()
-        >= 1
+        == 0
     )
-    assert (
-        db_session.query(MasterPlanVersion)
-        .join(MasterPlan, MasterPlanVersion.plan_id == MasterPlan.id)
-        .filter(MasterPlan.student_user_id == student.id)
-        .count()
-        >= 1
-    )
-    assert db_session.query(SubjectPlan).filter(SubjectPlan.student_user_id == student.id).count() >= 1
-    assert (
-        db_session.query(SubjectPlanVersion)
-        .join(SubjectPlan, SubjectPlanVersion.plan_id == SubjectPlan.id)
-        .filter(SubjectPlan.student_user_id == student.id)
-        .count()
-        >= 1
-    )
-    assert db_session.query(DailyTask).filter(DailyTask.student_user_id == student.id).count() >= 1
 
 
 def test_placement_submit_with_existing_mastery_snapshot(client, db_session):

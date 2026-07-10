@@ -106,9 +106,16 @@ def client(db_session) -> TestClient:
 
         run_paper_gen_job_if_needed(db_session, job_id)
 
+    def _kick_roadmap_in_test(job_id):
+        from app.services.roadmap_generation_jobs import run_roadmap_job_if_needed
+
+        run_roadmap_job_if_needed(db_session, job_id)
+
     app.dependency_overrides[get_db] = _override_get_db
     with (
         patch("app.routers.student_placement.kick_paper_gen_job", side_effect=_kick_in_test),
+        patch("app.routers.student_placement.kick_roadmap_job", side_effect=_kick_roadmap_in_test),
+        patch("app.routers.org_students.kick_roadmap_job", side_effect=_kick_roadmap_in_test),
         patch("app.routers.student_self_test.kick_paper_gen_job", side_effect=_kick_in_test),
         TestClient(app) as c,
     ):

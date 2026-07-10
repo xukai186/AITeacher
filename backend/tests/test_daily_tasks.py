@@ -19,6 +19,28 @@ def test_generate_7_days_tasks(db_session):
     db_session.add(StudentSubject(student_user_id=student.id, subject_code="english"))
     db_session.commit()
 
-    TaskGenerator().generate_next_7_days(db_session, student_user_id=student.id, today=date.today())
+    gen = TaskGenerator()
+    gen.generate_next_7_days(db_session, student_user_id=student.id, today=date.today())
     assert db_session.query(DailyTask).count() == 7
+
+    gen.generate_next_7_days(db_session, student_user_id=student.id, today=date.today())
+    assert db_session.query(DailyTask).count() == 7
+
+
+def test_generate_7_days_tasks_all_subjects(db_session):
+    org = make_org(db_session)
+    student = make_user(
+        db_session,
+        org,
+        role=UserRole.student,
+        email="s2@demo.example",
+        password_hash=hash_password("pw"),
+    )
+    db_session.add(StudentProfile(user_id=student.id, exam_year=2027))
+    for code in ("english", "math", "politics"):
+        db_session.add(StudentSubject(student_user_id=student.id, subject_code=code))
+    db_session.commit()
+
+    TaskGenerator().generate_next_7_days(db_session, student_user_id=student.id, today=date.today())
+    assert db_session.query(DailyTask).count() == 21
 

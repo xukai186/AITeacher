@@ -191,7 +191,6 @@ def confirm_exam_profile(
     if profile.profile_completed_at is None:
         profile.profile_completed_at = datetime.now(timezone.utc)
 
-    PlanningService().create_initial_plans(db, student_id)
     for code in subject_codes:
         try:
             PlacementService.start(db, student_id, subject_code=code)
