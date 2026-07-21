@@ -12,6 +12,7 @@ export type Student = {
   requires_plan_confirmation?: boolean;
   wrong_added_7d?: number;
   exam_profile_complete?: boolean;
+  staff_user_ids?: string[];
 };
 
 export type CreateStudentBody = {

@@ -26,6 +26,7 @@ class StudentSummary(BaseModel):
     requires_plan_confirmation: bool = False
     wrong_added_7d: int = 0
     exam_profile_complete: bool = False
+    staff_user_ids: list[uuid.UUID] = Field(default_factory=list)
 
 
 class StudentDetail(StudentSummary):

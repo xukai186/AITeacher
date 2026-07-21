@@ -76,6 +76,14 @@ def list_students(
     ).all()
     student_ids = [user.id for user, _ in rows]
     signals = signals_for_students(db, student_ids)
+    staff_by_student: dict[uuid.UUID, list[uuid.UUID]] = {sid: [] for sid in student_ids}
+    if student_ids:
+        for staff_id, student_id in db.execute(
+            select(StaffStudent.staff_user_id, StaffStudent.student_user_id).where(
+                StaffStudent.student_user_id.in_(student_ids)
+            )
+        ).all():
+            staff_by_student[student_id].append(staff_id)
     return [
         StudentSummary(
             id=user.id,
@@ -89,6 +97,7 @@ def list_students(
             requires_plan_confirmation=signals[user.id].requires_plan_confirmation,
             wrong_added_7d=signals[user.id].wrong_added_7d,
             exam_profile_complete=signals[user.id].exam_profile_complete,
+            staff_user_ids=staff_by_student.get(user.id, []),
         )
         for user, profile in rows
     ]
