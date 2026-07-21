@@ -270,9 +270,22 @@ class PlacementService:
                     target_code = code
                     break
             if target_code is None:
-                target_code = enabled_codes[0]
+                raise HTTPException(status.HTTP_400_BAD_REQUEST, "全部科目摸底已完成")
         elif target_code not in enabled_codes:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, "subject not enabled")
+
+        existing_paper = db.execute(
+            select(PlacementPaper).where(
+                PlacementPaper.student_user_id == student_user_id,
+                PlacementPaper.subject_code == target_code,
+            )
+        ).scalar_one_or_none()
+        if existing_paper is not None and cls._is_submitted(
+            db, existing_paper.id, student_user_id
+        ):
+            if subject_code is not None:
+                raise HTTPException(status.HTTP_400_BAD_REQUEST, "该科摸底已完成")
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "全部科目摸底已完成")
 
         paper, gen_job_id = cls._prepare_paper_for_start(db, student_user_id, target_code)
         db.commit()
@@ -302,7 +315,7 @@ class PlacementService:
             PlacementPaperSummary(
                 id=p.id,
                 subject_code=p.subject_code,
-                status=p.status,
+                status=cls._paper_status_label(db, p, student_user_id),
                 title=resolve_placement_paper_title(
                     db, subject_code=p.subject_code, student_user_id=student_user_id
                 ),
@@ -373,7 +386,7 @@ class PlacementService:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, "paper has no questions")
 
         if cls._is_submitted(db, paper_id, student_user_id):
-            raise HTTPException(status.HTTP_400_BAD_REQUEST, "placement already submitted")
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "该科摸底已完成")
 
         student = db.get(User, student_user_id)
         if student is None:

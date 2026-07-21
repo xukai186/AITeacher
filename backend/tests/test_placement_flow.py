@@ -176,6 +176,44 @@ def test_placement_submit_with_existing_mastery_snapshot(client, db_session):
     assert "old" not in snap.mastery_json
 
 
+def test_start_rejects_already_submitted_subject(client, db_session):
+    student = _seed_student(db_session)
+    token = _token(client, student.email)
+    headers = {"Authorization": f"Bearer {token}"}
+    start_placement_and_wait(client, token, db_session=db_session)
+    paper_id = client.get("/student/placement", headers=headers).json()[0]["id"]
+    questions = (
+        db_session.execute(select(PlacementQuestion).where(PlacementQuestion.paper_id == paper_id))
+        .scalars()
+        .all()
+    )
+    client.post(
+        f"/student/placement/{paper_id}/submit",
+        headers=headers,
+        json={
+            "answers": [
+                {"question_id": str(q.id), "content": _placement_answer_content(q)}
+                for q in questions
+            ]
+        },
+    )
+    again = client.post(
+        "/student/placement/start",
+        headers=headers,
+        json={"subject_code": "english"},
+    )
+    assert again.status_code == 400
+    assert again.json()["detail"] == "该科摸底已完成"
+
+    listed = client.get("/student/placement", headers=headers)
+    assert listed.status_code == 200
+    assert listed.json()[0]["status"] == "submitted"
+
+    no_subject = client.post("/student/placement/start", headers=headers, json={})
+    assert no_subject.status_code == 400
+    assert no_subject.json()["detail"] == "全部科目摸底已完成"
+
+
 def test_wrong_book_ingested_after_placement_submit(client, db_session):
     student = _seed_student(db_session)
     token = _token(client, student.email)
