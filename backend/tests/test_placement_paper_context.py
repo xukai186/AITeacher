@@ -181,3 +181,15 @@ def test_math_2_student_excludes_math_1_only_nodes(db_session):
     outline_names = {item["name"] for item in ctx.syllabus_outline}
     assert "高数" not in outline_names
     assert {"线代", "概率"} <= outline_names
+
+
+def test_leaf_nodes_fall_back_to_nearest_syllabus_year(db_session):
+    seed_minimal_syllabus(db_session)  # seeds 2027
+    leaves = leaf_nodes_for_placement(
+        db_session,
+        subject_code="english",
+        exam_year=2026,
+        english_track="english_2",
+    )
+    assert leaves
+    assert {n.name for n in leaves} >= {"阅读", "翻译", "写作"}
