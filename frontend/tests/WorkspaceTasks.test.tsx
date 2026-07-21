@@ -62,6 +62,32 @@ function mockFetchRouter() {
           { status: 200 },
         );
       }
+      if (url.includes("/api/student/roadmap")) {
+        return new Response(
+          JSON.stringify({
+            roadmap_id: null,
+            status: null,
+            active_version: null,
+            pending_version: null,
+            generation_job: null,
+          }),
+          { status: 200 },
+        );
+      }
+      if (url.endsWith("/api/student/placement") || /\/api\/student\/placement\?/.test(url)) {
+        return new Response(
+          JSON.stringify([
+            {
+              id: "p1",
+              subject_code: "english",
+              status: "submitted",
+              title: "英语摸底",
+              created_at: "2026-05-28T00:00:00Z",
+            },
+          ]),
+          { status: 200 },
+        );
+      }
       if (url.includes("/api/student/placement/start")) {
         return new Response(
           JSON.stringify({ subjects: [{ subject_code: "english", status: "ready", paper_id: "p1" }] }),
@@ -106,6 +132,13 @@ describe("Workspace tasks", () => {
     expect(screen.getByText("会计（MPAcc）")).toBeTruthy();
     expect(screen.getByText(/英语二/)).toBeTruthy();
     expect(screen.getByText(/不考数学/)).toBeTruthy();
+  });
+
+  it("shows completed placement button when subject is submitted", async () => {
+    mockFetchRouter();
+    renderWorkspace();
+    const btn = await screen.findByRole("button", { name: "已完成" });
+    expect(btn).toBeDisabled();
   });
 });
 

@@ -1,8 +1,8 @@
 import { useState } from "react";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "react-router-dom";
 import { fetchStudentMe } from "@/api/me";
-import { startPlacement } from "@/api/placement";
+import { startPlacement, listPlacementPapers } from "@/api/placement";
 import { fetchTodayTasks } from "@/api/tasks";
 import { generateSelfTest } from "@/api/selfTests";
 import { getStudentExamProfile } from "@/api/examProfile";
@@ -42,6 +42,7 @@ const MATH_LEVEL_LABELS: Record<string, string> = {
 
 export default function Workspace() {
   const navigate = useNavigate();
+  const qc = useQueryClient();
   const { data, isLoading, error } = useQuery({
     queryKey: ["student", "me"],
     queryFn: fetchStudentMe,
@@ -62,6 +63,11 @@ export default function Workspace() {
     queryFn: fetchRoadmap,
   });
 
+  const placements = useQuery({
+    queryKey: ["student", "placement", "list"],
+    queryFn: listPlacementPapers,
+  });
+
   const paperGen = usePaperGenProgress();
 
   const start = useMutation({
@@ -76,6 +82,9 @@ export default function Workspace() {
     onSuccess: (out) => {
       const paperId = out.subjects[0]?.paper_id;
       if (paperId) navigate(`/student/placement/${paperId}`);
+    },
+    onError: () => {
+      qc.invalidateQueries({ queryKey: ["student", "placement", "list"] });
     },
   });
 
@@ -103,6 +112,10 @@ export default function Workspace() {
 
   const current = activeSubject ?? data.subject_codes[0] ?? null;
   const paperGenBusy = start.isPending || genSelfTest.isPending || paperGen.running;
+  const currentPlacementStatus = (placements.data ?? []).find(
+    (p) => p.subject_code === current,
+  )?.status;
+  const placementDone = currentPlacementStatus === "submitted";
   const profile = examProfile.data;
   const profileIncomplete =
     examProfile.isSuccess && (!profile || !profile.profile_completed_at);
@@ -177,10 +190,14 @@ export default function Workspace() {
           </div>
           <button
             className="px-3 py-1 rounded text-sm bg-slate-900 text-white disabled:bg-slate-200 disabled:text-slate-500"
-            disabled={paperGenBusy || !current || profileIncomplete}
+            disabled={paperGenBusy || !current || profileIncomplete || placementDone}
             onClick={() => start.mutate()}
           >
-            {paperGenBusy ? "生成题目中…" : "开始摸底测评"}
+            {paperGenBusy
+              ? "生成题目中…"
+              : placementDone
+                ? "已完成"
+                : "开始摸底测评"}
           </button>
         </div>
         {profileIncomplete && (
