@@ -502,7 +502,11 @@ def test_placement_start_regenerates_unsubmitted_paper(db_session):
     assert any(q.q_type == "short_answer" for q in questions)
 
 
-def test_placement_start_keeps_submitted_paper(db_session):
+def test_placement_start_rejects_submitted_paper(db_session):
+    """One-shot: re-start after submit must 400, not reopen/regenerate the paper."""
+    import pytest
+    from fastapi import HTTPException
+
     org, student = _seed_student_with_syllabus(db_session)
     from app.models import (
         PlacementPaper,
@@ -546,9 +550,11 @@ def test_placement_start_keeps_submitted_paper(db_session):
     )
     db_session.commit()
 
-    PlacementService.start(db_session, student.id, subject_code="math")
-    finish_paper_gen_jobs(db_session)
-    db_session.commit()
+    with pytest.raises(HTTPException) as exc_info:
+        PlacementService.start(db_session, student.id, subject_code="math")
+    assert exc_info.value.status_code == 400
+    assert exc_info.value.detail == "该科摸底已完成"
+
     questions = (
         db_session.execute(select(PlacementQuestion).where(PlacementQuestion.paper_id == paper.id))
         .scalars()
