@@ -130,6 +130,46 @@ def test_roadmap_runner_processes_pending(db_session):
     assert db_session.get(RoadmapGenerationJob, job.job_id).status == "succeeded"
 
 
+def test_roadmap_get_includes_resolved_leaves(client, db_session):
+    student = _seed_student(db_session)
+    job = RoadmapGenerationJobService().enqueue(db_session, student_user_id=student.id)
+    RoadmapGenerationJobService().run_job(db_session, job.job_id)
+    token = client.post("/auth/login", json={"email": student.email, "password": "pw"}).json()["access_token"]
+    state = client.get("/student/roadmap", headers={"Authorization": f"Bearer {token}"})
+    assert state.status_code == 200
+    pending = state.json()["pending_version"]
+    assert pending is not None
+    month0 = pending["months_json"]["months"][0]
+    block = next(iter(month0["subjects"].values()))
+    assert block.get("syllabus_node_ids")
+    resolved = block.get("syllabus_nodes_resolved")
+    assert resolved
+    assert resolved[0]["name"]
+    assert "parent_name" in resolved[0]
+
+
+def test_confirm_rejects_invalid_leaf_ids(client, db_session):
+    from sqlalchemy.orm.attributes import flag_modified
+
+    student = _seed_student(db_session)
+    job = RoadmapGenerationJobService().enqueue(db_session, student_user_id=student.id)
+    RoadmapGenerationJobService().run_job(db_session, job.job_id)
+    state = RoadmapActivationService().get_state(db_session, student_user_id=student.id)
+    pending = state["pending_version"]
+    months = pending.months_json["months"]
+    first_code = next(iter(months[0]["subjects"]))
+    months[0]["subjects"][first_code]["syllabus_node_ids"] = [
+        "00000000-0000-0000-0000-000000000099"
+    ]
+    pending.months_json = {"months": months}
+    flag_modified(pending, "months_json")
+    db_session.commit()
+    token = client.post("/auth/login", json={"email": student.email, "password": "pw"}).json()["access_token"]
+    confirm = client.post("/student/roadmap/confirm", headers={"Authorization": f"Bearer {token}"})
+    assert confirm.status_code == 400
+    assert "无效" in confirm.json()["detail"]
+
+
 def test_org_regenerate_roadmap(client, db_session):
     from app.auth.security import hash_password
     from app.models import Organization, StaffStudent, User, UserRole
