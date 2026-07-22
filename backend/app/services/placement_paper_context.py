@@ -417,10 +417,15 @@ def _resolve_node_for_area(
     *,
     fallback_index: int,
     weak_node_ids: set[uuid.UUID],
+    parent_name_by_id: dict[uuid.UUID, str] | None = None,
 ) -> SyllabusNode:
     by_name = {n.name: n for n in leaves}
     if knowledge_area and knowledge_area in by_name:
         return by_name[knowledge_area]
+    if knowledge_area and parent_name_by_id:
+        for node in leaves:
+            if parent_name_by_id.get(node.parent_id) == knowledge_area:
+                return node
     for node in leaves:
         if node.id in weak_node_ids:
             return node
@@ -432,9 +437,17 @@ def build_placement_slots(
     context: PlacementGenContext,
     leaves: list[SyllabusNode],
     weak_nodes: list,
+    *,
+    parent_name_by_id: dict[uuid.UUID, str] | None = None,
 ) -> list[PlacementSlot]:
     if not leaves:
         return []
+
+    if parent_name_by_id is None:
+        all_nodes = syllabus_nodes_for_year(
+            db, subject_code=leaves[0].subject_code, exam_year=context.exam_year
+        )
+        parent_name_by_id = {n.id: n.name for n in all_nodes}
 
     weak_ids = {
         w.knowledge_node_id for w in weak_nodes if getattr(w, "knowledge_node_id", None) is not None
@@ -453,6 +466,7 @@ def build_placement_slots(
                 knowledge_area,
                 fallback_index=seq - 1,
                 weak_node_ids=weak_ids,
+                parent_name_by_id=parent_name_by_id,
             )
             slots.append(
                 PlacementSlot(

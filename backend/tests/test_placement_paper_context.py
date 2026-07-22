@@ -192,4 +192,4 @@ def test_leaf_nodes_fall_back_to_nearest_syllabus_year(db_session):
         english_track="english_2",
     )
     assert leaves
-    assert {n.name for n in leaves} >= {"阅读", "翻译", "写作"}
+    assert {n.name for n in leaves} >= {"主旨题", "词义选择", "图表描述"}

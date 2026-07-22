@@ -1,4 +1,4 @@
-"""Seed a minimal 2-level syllabus tree for P3 placement and planning."""
+"""Seed a minimal 3-level syllabus tree for P3 placement and planning."""
 from __future__ import annotations
 
 from sqlalchemy import select
@@ -11,24 +11,98 @@ from app.seed_past_exam_templates import seed_past_exam_paper_templates
 
 DEFAULT_SYLLABUS_EXAM_YEAR = 2027
 
-# subject_code -> (root name, [(child name, optional meta_json)...])
-_MINIMAL_SYLLABUS: dict[str, tuple[str, list[tuple[str, dict | None]]]] = {
-    "english": ("英语", [("阅读", None), ("翻译", None), ("写作", None)]),
+# subject -> (root, [(l1_name, meta, [leaf_names...]), ...])
+_MINIMAL_SYLLABUS: dict[str, tuple[str, list[tuple[str, dict | None, list[str]]]]] = {
+    "english": (
+        "英语",
+        [
+            (
+                "阅读",
+                None,
+                [
+                    "细节题",
+                    "主旨题",
+                    "推断题",
+                    "态度题",
+                    "词汇题",
+                    "例证题",
+                    "篇章结构",
+                    "长难句",
+                ],
+            ),
+            (
+                "翻译",
+                None,
+                [
+                    "词义选择",
+                    "长句拆分",
+                    "定语从句译",
+                    "被动语态译",
+                    "名词性从句译",
+                    "状语从句译",
+                    "增译减译",
+                    "语序调整",
+                ],
+            ),
+            (
+                "写作",
+                None,
+                [
+                    "图表描述",
+                    "图画寓意",
+                    "开头段",
+                    "中间论证",
+                    "结尾段",
+                    "连接词",
+                    "应用文格式",
+                    "书信请求",
+                ],
+            ),
+        ],
+    ),
     "math": (
         "数学",
         [
-            ("高数", {"tracks": ["math_1"]}),
-            ("线代", None),
-            ("概率", None),
+            (
+                "高数",
+                {"tracks": ["math_1"]},
+                ["极限", "连续", "导数", "微分", "不定积分", "定积分", "微分方程", "多元函数"],
+            ),
+            (
+                "线代",
+                None,
+                ["行列式", "矩阵运算", "逆矩阵", "线性方程组", "向量组", "特征值", "二次型", "相似对角化"],
+            ),
+            (
+                "概率",
+                None,
+                ["随机事件", "条件概率", "随机变量", "分布函数", "期望方差", "常见分布", "大数定律", "中心极限"],
+            ),
         ],
     ),
     "politics": (
         "政治",
         [
-            ("马原", None),
-            ("毛中特", None),
-            ("史纲", None),
-            ("思修", None),
+            (
+                "马原",
+                None,
+                ["唯物论", "辩证法", "认识论", "唯物史观", "实践观", "矛盾规律", "否定之否定", "量变质变"],
+            ),
+            (
+                "毛中特",
+                None,
+                ["新民主主义", "社会主义改造", "改革开放", "市场经济", "一国两制", "三个代表", "科学发展观", "中国特色"],
+            ),
+            (
+                "史纲",
+                None,
+                ["鸦片战争", "辛亥革命", "五四运动", "建党", "长征", "抗战", "解放战争", "建国初期"],
+            ),
+            (
+                "思修",
+                None,
+                ["理想信念", "中国精神", "人生价值", "道德规范", "法治思维", "宪法法律", "权利义务", "社会责任"],
+            ),
         ],
     ),
 }
@@ -98,18 +172,28 @@ def _ensure_node(
 
 
 def seed_minimal_syllabus(db: Session, *, exam_year: int = DEFAULT_SYLLABUS_EXAM_YEAR) -> None:
-    for subject_code, (root_title, children) in _MINIMAL_SYLLABUS.items():
+    for subject_code, (root_title, chapters) in _MINIMAL_SYLLABUS.items():
         root = _ensure_node(db, subject_code, None, root_title, weight=1, exam_year=exam_year)
-        for child_name, child_meta in children:
-            _ensure_node(
+        for chapter_name, chapter_meta, leaf_names in chapters:
+            chapter = _ensure_node(
                 db,
                 subject_code,
                 root.id,
-                child_name,
+                chapter_name,
                 weight=1,
                 exam_year=exam_year,
-                meta_json=child_meta,
+                meta_json=chapter_meta,
             )
+            for leaf_name in leaf_names:
+                _ensure_node(
+                    db,
+                    subject_code,
+                    chapter.id,
+                    leaf_name,
+                    weight=1,
+                    exam_year=exam_year,
+                    meta_json=chapter_meta,
+                )
     seed_past_exam_questions(db, syllabus_exam_year=exam_year)
     seed_past_exam_paper_templates(db, syllabus_exam_year=exam_year)
 
