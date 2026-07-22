@@ -1,3 +1,5 @@
+import json
+
 from app.models import RoadmapGenerationJob
 from app.services.roadmap_activation import RoadmapActivationService
 from app.services.roadmap_draft import RoadmapDraftService
@@ -12,6 +14,63 @@ def test_roadmap_draft_rule_has_months(db_session):
     months = draft.months_json.get("months") or []
     assert months
     assert months[0]["subjects"]
+
+
+def test_roadmap_draft_rule_uses_leaf_ids(db_session):
+    student = _seed_student(db_session)
+    draft = RoadmapDraftService().draft(db_session, student_user_id=student.id)
+    months = draft.months_json.get("months") or []
+    assert months
+    seen: set[str] = set()
+    for month in months:
+        for code, block in (month.get("subjects") or {}).items():
+            ids = block.get("syllabus_node_ids") or []
+            assert 1 <= len(ids) <= 4
+            assert "syllabus_nodes" not in block or block.get("syllabus_nodes") in (None, [])
+            for nid in ids:
+                assert nid not in seen
+                seen.add(nid)
+
+
+def test_parse_llm_rejects_invalid_leaf_id(db_session):
+    student = _seed_student(db_session)
+    svc = RoadmapDraftService()
+    context = svc._build_context(db_session, student_user_id=student.id, subject_codes=["english"])
+    month_keys = ["2026-07"]
+    valid_id = context["syllabus_outline"]["english"][0]["id"]
+    raw = json.dumps(
+        {
+            "summary": {"text": "t"},
+            "months": [
+                {
+                    "month": "2026-07",
+                    "label": "基础月",
+                    "subjects": {
+                        "english": {
+                            "focus": "阅读",
+                            "syllabus_node_ids": [valid_id, "00000000-0000-0000-0000-000000000000"],
+                            "weekly_hours_hint": 12,
+                            "notes": "",
+                        }
+                    },
+                    "milestones": [],
+                }
+            ],
+        },
+        ensure_ascii=False,
+    )
+    parsed = svc._parse_llm_draft(
+        raw,
+        subject_codes=["english"],
+        start_date=__import__("datetime").date(2026, 7, 1),
+        end_date=__import__("datetime").date(2026, 7, 31),
+        month_keys=month_keys,
+        allowed_ids_by_subject={
+            code: {n["id"] for n in context["syllabus_outline"].get(code, [])}
+            for code in ["english"]
+        },
+    )
+    assert parsed is None
 
 
 def test_placement_submit_enqueues_roadmap_when_all_subjects_done(client, db_session):

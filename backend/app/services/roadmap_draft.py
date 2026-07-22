@@ -16,12 +16,14 @@ from app.models import (
     PlacementSubmission,
     StudentProfile,
     StudentSubject,
+    SyllabusNode,
     User,
 )
+from app.seed_syllabus import seed_minimal_syllabus
 from app.services.exam_profile import ExamProfileService
 from app.services.model_gateway import ModelGateway, ModelGatewayRequest
 from app.services.placement_paper_context import (
-    filter_nodes_for_track,
+    leaf_nodes_for_placement,
     resolve_placement_tracks,
     resolve_student_exam_year,
     syllabus_nodes_for_year,
@@ -121,6 +123,13 @@ class RoadmapDraftService:
             end = date(exam_year + 1, 12, 20)
         return today, end
 
+    @staticmethod
+    def _ensure_syllabus(db: Session) -> None:
+        count = db.execute(select(SyllabusNode.id).limit(1)).scalar_one_or_none()
+        if count is None:
+            seed_minimal_syllabus(db)
+            db.flush()
+
     def _build_context(
         self,
         db: Session,
@@ -128,6 +137,7 @@ class RoadmapDraftService:
         student_user_id: uuid.UUID,
         subject_codes: list[str],
     ) -> dict:
+        self._ensure_syllabus(db)
         effective = ExamProfileService().get_effective(db, student_user_id)
         profile = db.execute(
             select(StudentProfile).where(StudentProfile.user_id == student_user_id)
@@ -166,18 +176,27 @@ class RoadmapDraftService:
 
         syllabus_outline: dict[str, list[dict]] = {}
         for code in codes:
-            nodes = syllabus_nodes_for_year(db, subject_code=code, exam_year=exam_year)
-            nodes = filter_nodes_for_track(
-                nodes,
+            leaves = leaf_nodes_for_placement(
+                db,
                 subject_code=code,
+                exam_year=exam_year,
                 english_track=english_track,
                 math_track=math_track,
             )
-            roots = {n.id for n in nodes if n.parent_id is None}
-            top_level = [n for n in nodes if n.parent_id in roots]
-            if not top_level:
-                top_level = [n for n in nodes if n.parent_id is not None]
-            syllabus_outline[code] = [{"name": n.name, "id": str(n.id)} for n in top_level]
+            by_id = {
+                n.id: n
+                for n in syllabus_nodes_for_year(db, subject_code=code, exam_year=exam_year)
+            }
+            syllabus_outline[code] = []
+            for n in leaves:
+                parent = by_id.get(n.parent_id) if n.parent_id else None
+                syllabus_outline[code].append(
+                    {
+                        "id": str(n.id),
+                        "name": n.name,
+                        "parent_name": parent.name if parent else None,
+                    }
+                )
 
         subjects_ctx: list[dict] = []
         for code in codes:
@@ -247,27 +266,44 @@ class RoadmapDraftService:
         month_keys = self._month_keys(start_date, end_date)
         months: list[dict] = []
 
-        nodes_by_subject: dict[str, list[str]] = {
-            code: [n["name"] for n in context["syllabus_outline"].get(code, [])]
+        PER_MONTH = 2
+        nodes_by_subject: dict[str, list[dict]] = {
+            code: list(context["syllabus_outline"].get(code, []))
             for code in codes
         }
-        for code in codes:
-            if not nodes_by_subject[code]:
-                nodes_by_subject[code] = [SUBJECT_LABELS.get(code, code)]
-
-        idx = {code: 0 for code in codes}
+        offsets = {code: 0 for code in codes}
         for i, month_key in enumerate(month_keys):
             subjects_block: dict[str, dict] = {}
             for code in codes:
                 names = nodes_by_subject[code]
-                node_name = names[idx[code] % len(names)]
-                idx[code] += 1
+                chunk: list[dict] = []
+                if names:
+                    start = offsets[code]
+                    for _ in range(PER_MONTH):
+                        pos = start + len(chunk)
+                        if pos >= len(names):
+                            break
+                        chunk.append(names[pos])
+                    offsets[code] = start + len(chunk)
+
+                if not chunk:
+                    continue
+
+                ids: list[str] = []
+                seen_local: set[str] = set()
+                for item in chunk:
+                    if item["id"] not in seen_local:
+                        seen_local.add(item["id"])
+                        ids.append(item["id"])
+                if not ids:
+                    continue
+                label_names = "、".join(item["name"] for item in chunk)
                 weekly_hours = self._default_weekly_hours(code, context)
                 subjects_block[code] = {
-                    "focus": f"{SUBJECT_LABELS.get(code, code)} · {node_name}",
-                    "syllabus_nodes": [node_name],
+                    "focus": f"{SUBJECT_LABELS.get(code, code)} · {label_names}",
+                    "syllabus_node_ids": ids[:4],
                     "weekly_hours_hint": weekly_hours,
-                    "notes": f"本月重点学习 {node_name}，按周完成系统任务。",
+                    "notes": f"本月重点学习 {label_names}，按周完成系统任务。",
                 }
             months.append(
                 {
@@ -281,7 +317,7 @@ class RoadmapDraftService:
         return RoadmapDraft(
             start_date=start_date,
             end_date=end_date,
-            summary_json={"text": "按考纲一级章节逐月推进，薄弱科目在战术层自动加权。"},
+            summary_json={"text": "按考纲叶子知识点逐月推进，薄弱科目在战术层自动加权。"},
             months_json={"months": months},
             source="rule",
         )
@@ -329,11 +365,12 @@ class RoadmapDraftService:
                 f"CET：{context.get('cet_status')}",
                 f"数学基础：{context.get('math_mastery_level')}",
                 f"科目：{json.dumps(context.get('subject_codes'), ensure_ascii=False)}",
-                "考纲一级章节（syllabus_nodes 只能从中选取 name）：",
+                "考纲叶子知识点（syllabus_node_ids 只能从中选取 id，含 parent_name 便于分组）：",
                 json.dumps(context.get("syllabus_outline"), ensure_ascii=False),
                 "学情与摸底：",
                 json.dumps(context.get("subjects"), ensure_ascii=False),
-                "规则：math_track=none 禁止 math；每月每科 1-2 个 syllabus_nodes；含 weekly_hours_hint。",
+                "规则：math_track=none 禁止 math；每月每科 2-4 个 syllabus_node_ids（来自 outline 的 id）；"
+                "同一叶子 id 不可跨月重复；含 weekly_hours_hint；不要输出 syllabus_nodes。",
                 "只输出 STRICT JSON：",
                 json.dumps(
                     {
@@ -345,7 +382,7 @@ class RoadmapDraftService:
                                 "subjects": {
                                     context["subject_codes"][0]: {
                                         "focus": "学习重点",
-                                        "syllabus_nodes": ["章节名"],
+                                        "syllabus_node_ids": ["uuid-from-outline"],
                                         "weekly_hours_hint": 12,
                                         "notes": "说明",
                                     }
@@ -373,6 +410,10 @@ class RoadmapDraftService:
             start_date=start_date,
             end_date=end_date,
             month_keys=month_keys,
+            allowed_ids_by_subject={
+                code: {n["id"] for n in context["syllabus_outline"].get(code, [])}
+                for code in context["subject_codes"]
+            },
         )
 
     def _parse_llm_draft(
@@ -383,6 +424,7 @@ class RoadmapDraftService:
         start_date: date,
         end_date: date,
         month_keys: list[str],
+        allowed_ids_by_subject: dict[str, set[str]],
     ) -> RoadmapDraft | None:
         text = raw.strip()
         if text.startswith("```"):
@@ -396,6 +438,7 @@ class RoadmapDraftService:
         if not isinstance(months_raw, list) or not months_raw:
             return None
         months: list[dict] = []
+        seen_ids: set[str] = set()
         for item in months_raw[:MAX_ROADMAP_MONTHS]:
             if not isinstance(item, dict):
                 continue
@@ -411,13 +454,28 @@ class RoadmapDraftService:
                     if not isinstance(block, dict):
                         continue
                     focus = str(block.get("focus") or "").strip()
-                    nodes_raw = block.get("syllabus_nodes") or []
-                    nodes = [str(n).strip() for n in nodes_raw if str(n).strip()][:2]
-                    if not focus and not nodes:
-                        continue
+                    allowed = allowed_ids_by_subject.get(code, set())
+                    ids_raw = block.get("syllabus_node_ids") or []
+                    ids: list[str] = []
+                    for raw_id in ids_raw:
+                        nid = str(raw_id).strip()
+                        if not nid:
+                            continue
+                        if nid not in allowed:
+                            return None
+                        ids.append(nid)
+                    ids = ids[:4]
+                    if not ids:
+                        return None
+                    for nid in ids:
+                        if nid in seen_ids:
+                            return None
+                        seen_ids.add(nid)
+                    if not focus:
+                        focus = "、".join(ids)
                     subjects_out[code] = {
-                        "focus": focus or "、".join(nodes),
-                        "syllabus_nodes": nodes,
+                        "focus": focus,
+                        "syllabus_node_ids": ids,
                         "weekly_hours_hint": int(block.get("weekly_hours_hint") or 12),
                         "notes": str(block.get("notes") or "").strip(),
                     }
