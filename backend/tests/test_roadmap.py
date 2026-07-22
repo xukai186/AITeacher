@@ -1,9 +1,13 @@
 import json
+from datetime import date
 
 from app.models import RoadmapGenerationJob
+from app.services.plan_draft import PlanDraft, PlanDraftService
 from app.services.roadmap_activation import RoadmapActivationService
+from app.services.roadmap_context import MonthSlice
 from app.services.roadmap_draft import RoadmapDraftService
 from app.services.roadmap_generation_jobs import RoadmapGenerationJobRunner, RoadmapGenerationJobService
+from app.services.roadmap_resolve import resolve_syllabus_nodes
 from tests.factories import make_user
 from tests.test_placement_flow import _seed_student, start_placement_and_wait
 
@@ -14,6 +18,29 @@ def test_roadmap_draft_rule_has_months(db_session):
     months = draft.months_json.get("months") or []
     assert months
     assert months[0]["subjects"]
+
+
+def test_apply_month_slice_appends_leaf_names(db_session):
+    student = _seed_student(db_session)
+    draft_rm = RoadmapDraftService().draft(db_session, student_user_id=student.id)
+    month0 = draft_rm.months_json["months"][0]
+    code, block = next(iter(month0["subjects"].items()))
+    leaf_id = block["syllabus_node_ids"][0]
+    name = resolve_syllabus_nodes(db_session, [leaf_id])[0]["name"]
+    base = PlanDraft(
+        weekly_goals_json=[],
+        daily_time_budget_json=[],
+        subject_phases_json={code: [{"title": "x", "days": 7, "notes": "旧"}]},
+    )
+    slice_ = MonthSlice(
+        month=month0["month"],
+        label=month0["label"],
+        subjects={code: block},
+        milestones=[],
+    )
+    out = PlanDraftService()._apply_month_slice(base, slice_, date.today(), db=db_session)
+    notes = out.subject_phases_json[code][0]["notes"]
+    assert name in notes or "本月叶子" in notes
 
 
 def test_roadmap_draft_rule_uses_leaf_ids(db_session):
