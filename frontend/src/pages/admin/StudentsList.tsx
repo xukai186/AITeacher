@@ -2,6 +2,7 @@ import { FormEvent, useState } from "react";
 import { Link } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { assignPackage, listPackages } from "@/api/packages";
+import { assignStaff, listStaff, unassignStaff } from "@/api/staff";
 import { createStudent, listStudents, Student } from "@/api/students";
 import { StudentSignals } from "@/components/org/StudentSignals";
 
@@ -17,6 +18,11 @@ export default function StudentsList() {
     queryFn: listPackages,
   });
 
+  const { data: staffList } = useQuery({
+    queryKey: ["admin", "staff"],
+    queryFn: listStaff,
+  });
+
   const createMut = useMutation({
     mutationFn: createStudent,
     onSuccess: () => qc.invalidateQueries({ queryKey: ["admin", "students"] }),
@@ -25,6 +31,29 @@ export default function StudentsList() {
   const assignMut = useMutation({
     mutationFn: ({ studentId, packageId }: { studentId: string; packageId: string }) =>
       assignPackage(studentId, packageId),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["admin", "students"] }),
+  });
+
+  const assignStaffMut = useMutation({
+    mutationFn: async ({
+      studentId,
+      nextStaffId,
+      currentStaffIds,
+    }: {
+      studentId: string;
+      nextStaffId: string;
+      currentStaffIds: string[];
+    }) => {
+      // List UI treats one primary teacher: replace when switching.
+      for (const oldId of currentStaffIds) {
+        if (oldId !== nextStaffId) {
+          await unassignStaff(studentId, oldId);
+        }
+      }
+      if (nextStaffId) {
+        await assignStaff(studentId, nextStaffId);
+      }
+    },
     onSuccess: () => qc.invalidateQueries({ queryKey: ["admin", "students"] }),
   });
 
@@ -48,7 +77,7 @@ export default function StudentsList() {
   };
 
   return (
-    <div className="space-y-6 max-w-4xl">
+    <div className="space-y-6 max-w-5xl">
       <h1 className="text-xl font-semibold">学员</h1>
 
       <form onSubmit={onSubmit} className="bg-white shadow rounded p-4 grid grid-cols-2 gap-3">
@@ -109,62 +138,101 @@ export default function StudentsList() {
                 <th className="px-4 py-2">考试年份</th>
                 <th className="px-4 py-2">学情摘要</th>
                 <th className="px-4 py-2">套餐</th>
+                <th className="px-4 py-2">负责老师</th>
                 <th className="px-4 py-2">报考档案</th>
                 <th className="px-4 py-2" />
               </tr>
             </thead>
             <tbody>
-              {data.map((s) => (
-                <tr key={s.id} className="border-t">
-                  <td className="px-4 py-2">{s.name}</td>
-                  <td className="px-4 py-2">{s.email}</td>
-                  <td className="px-4 py-2">{s.exam_year}</td>
-                  <td className="px-4 py-2">
-                    <StudentSignals student={s} />
-                  </td>
-                  <td className="px-4 py-2">
-                    <select
-                      className="border rounded px-2 py-1 text-sm"
-                      value={s.package_id ?? ""}
-                      onChange={(e) => assignMut.mutate({ studentId: s.id, packageId: e.target.value })}
-                      disabled={!packages || packages.length === 0}
-                    >
-                      <option value="" disabled>
-                        未分配
-                      </option>
-                      {packages?.map((p) => (
-                        <option key={p.id} value={p.id}>
-                          {p.name}
+              {data.map((s) => {
+                const currentStaffIds = s.staff_user_ids ?? [];
+                const selectedStaffId = currentStaffIds[0] ?? "";
+                return (
+                  <tr key={s.id} className="border-t">
+                    <td className="px-4 py-2">{s.name}</td>
+                    <td className="px-4 py-2">{s.email}</td>
+                    <td className="px-4 py-2">{s.exam_year}</td>
+                    <td className="px-4 py-2">
+                      <StudentSignals student={s} />
+                    </td>
+                    <td className="px-4 py-2">
+                      <select
+                        className="border rounded px-2 py-1 text-sm"
+                        value={s.package_id ?? ""}
+                        onChange={(e) =>
+                          assignMut.mutate({ studentId: s.id, packageId: e.target.value })
+                        }
+                        disabled={!packages || packages.length === 0}
+                      >
+                        <option value="" disabled>
+                          未分配
                         </option>
-                      ))}
-                    </select>
-                  </td>
-                  <td className="px-4 py-2">
-                    <Link
-                      to={`/admin/students/${s.id}/exam-profile`}
-                      className="text-blue-600 hover:underline inline-flex items-center gap-2"
-                    >
-                      报考档案
-                      {s.exam_profile_complete === false && (
-                        <span className="text-[10px] px-2 py-0.5 rounded bg-amber-100 text-amber-800">
-                          未完成
-                        </span>
-                      )}
-                    </Link>
-                  </td>
-                  <td className="px-4 py-2">
-                    <Link
-                      to={`/admin/students/${s.id}`}
-                      className="text-blue-600 hover:underline"
-                    >
-                      详情
-                    </Link>
-                  </td>
-                </tr>
-              ))}
+                        {packages?.map((p) => (
+                          <option key={p.id} value={p.id}>
+                            {p.name}
+                          </option>
+                        ))}
+                      </select>
+                    </td>
+                    <td className="px-4 py-2">
+                      <select
+                        className="border rounded px-2 py-1 text-sm min-w-[8rem]"
+                        value={selectedStaffId}
+                        data-testid={`staff-assign-${s.id}`}
+                        disabled={assignStaffMut.isPending || !staffList}
+                        onChange={(e) =>
+                          assignStaffMut.mutate({
+                            studentId: s.id,
+                            nextStaffId: e.target.value,
+                            currentStaffIds,
+                          })
+                        }
+                      >
+                        <option value="">未分配</option>
+                        {staffList?.map((staff) => (
+                          <option key={staff.id} value={staff.id}>
+                            {staff.name}
+                          </option>
+                        ))}
+                      </select>
+                      {currentStaffIds.length > 1 ? (
+                        <p className="text-[10px] text-slate-500 mt-1">
+                          另有 {currentStaffIds.length - 1} 名负责老师
+                        </p>
+                      ) : null}
+                      {assignStaffMut.error ? (
+                        <p className="text-[10px] text-red-600 mt-1">
+                          {(assignStaffMut.error as Error).message}
+                        </p>
+                      ) : null}
+                    </td>
+                    <td className="px-4 py-2">
+                      <Link
+                        to={`/admin/students/${s.id}/exam-profile`}
+                        className="text-blue-600 hover:underline inline-flex items-center gap-2"
+                      >
+                        报考档案
+                        {s.exam_profile_complete === false && (
+                          <span className="text-[10px] px-2 py-0.5 rounded bg-amber-100 text-amber-800">
+                            未完成
+                          </span>
+                        )}
+                      </Link>
+                    </td>
+                    <td className="px-4 py-2">
+                      <Link
+                        to={`/admin/students/${s.id}`}
+                        className="text-blue-600 hover:underline"
+                      >
+                        详情
+                      </Link>
+                    </td>
+                  </tr>
+                );
+              })}
               {data.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="px-4 py-6 text-center text-slate-500">
+                  <td colSpan={8} className="px-4 py-6 text-center text-slate-500">
                     暂无学员
                   </td>
                 </tr>

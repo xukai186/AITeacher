@@ -193,13 +193,25 @@ def load_paper_template(
         english_track,
         math_track,
     )
-    return db.execute(
+    # Prefer same year; if none, any year for this subject.
+    same_year = db.execute(
         select(PastExamPaperTemplate)
         .where(
             PastExamPaperTemplate.subject_code == subject_code,
             PastExamPaperTemplate.syllabus_exam_year == syllabus_exam_year,
         )
         .order_by(PastExamPaperTemplate.reference_year.desc())
+        .limit(1)
+    ).scalar_one_or_none()
+    if same_year is not None:
+        return same_year
+    return db.execute(
+        select(PastExamPaperTemplate)
+        .where(PastExamPaperTemplate.subject_code == subject_code)
+        .order_by(
+            PastExamPaperTemplate.syllabus_exam_year.desc(),
+            PastExamPaperTemplate.reference_year.desc(),
+        )
         .limit(1)
     ).scalar_one_or_none()
 
@@ -246,12 +258,52 @@ def resolve_placement_question_count(
 def syllabus_nodes_for_year(
     db: Session, *, subject_code: str, exam_year: int
 ) -> list[SyllabusNode]:
-    return list(
+    nodes = list(
         db.execute(
             select(SyllabusNode)
             .where(
                 SyllabusNode.subject_code == subject_code,
                 or_(SyllabusNode.exam_year.is_(None), SyllabusNode.exam_year == exam_year),
+            )
+            .order_by(SyllabusNode.name)
+        )
+        .scalars()
+        .all()
+    )
+    if nodes:
+        return nodes
+
+    available_years = [
+        y
+        for y in db.execute(
+            select(SyllabusNode.exam_year)
+            .where(
+                SyllabusNode.subject_code == subject_code,
+                SyllabusNode.exam_year.is_not(None),
+            )
+            .distinct()
+        )
+        .scalars()
+        .all()
+        if y is not None
+    ]
+    if not available_years:
+        return []
+
+    later_or_same = [y for y in available_years if y >= exam_year]
+    fallback_year = min(later_or_same) if later_or_same else max(available_years)
+    logger.warning(
+        "No syllabus for subject=%s exam_year=%s; falling back to year=%s",
+        subject_code,
+        exam_year,
+        fallback_year,
+    )
+    return list(
+        db.execute(
+            select(SyllabusNode)
+            .where(
+                SyllabusNode.subject_code == subject_code,
+                SyllabusNode.exam_year == fallback_year,
             )
             .order_by(SyllabusNode.name)
         )
@@ -304,7 +356,7 @@ def load_past_exam_samples(
     syllabus_exam_year: int,
     limit: int = PAST_EXAM_SAMPLE_LIMIT,
 ) -> list[PastExamQuestion]:
-    return list(
+    samples = list(
         db.execute(
             select(PastExamQuestion)
             .where(
@@ -312,6 +364,22 @@ def load_past_exam_samples(
                 PastExamQuestion.syllabus_exam_year == syllabus_exam_year,
             )
             .order_by(PastExamQuestion.source_year.desc(), PastExamQuestion.created_at.asc())
+            .limit(limit)
+        )
+        .scalars()
+        .all()
+    )
+    if samples:
+        return samples
+    return list(
+        db.execute(
+            select(PastExamQuestion)
+            .where(PastExamQuestion.subject_code == subject_code)
+            .order_by(
+                PastExamQuestion.syllabus_exam_year.desc(),
+                PastExamQuestion.source_year.desc(),
+                PastExamQuestion.created_at.asc(),
+            )
             .limit(limit)
         )
         .scalars()

@@ -106,3 +106,33 @@ def test_admin_list_includes_exam_profile_complete(client, db_session):
     by_email = {row["email"]: row for row in resp.json()}
     assert by_email["complete@demo.example"]["exam_profile_complete"] is True
     assert by_email["incomplete@demo.example"]["exam_profile_complete"] is False
+
+
+def test_admin_list_includes_staff_user_ids(client, db_session):
+    from app.models import StaffStudent
+
+    org = _seed_admin(db_session)
+    staff = make_user(
+        db_session,
+        org,
+        role=UserRole.org_staff,
+        email="teacher@demo.example",
+        password_hash=hash_password("pw"),
+        name="Teacher",
+    )
+    student = make_user(
+        db_session,
+        org,
+        role=UserRole.student,
+        email="assigned@demo.example",
+        name="Assigned",
+    )
+    db_session.add(StudentProfile(user_id=student.id, exam_year=2027))
+    db_session.add(StaffStudent(staff_user_id=staff.id, student_user_id=student.id))
+    db_session.commit()
+
+    token = _login(client, "admin@demo.example", "admin123")
+    resp = client.get("/admin/students", headers={"Authorization": f"Bearer {token}"})
+    assert resp.status_code == 200
+    by_email = {row["email"]: row for row in resp.json()}
+    assert by_email["assigned@demo.example"]["staff_user_ids"] == [str(staff.id)]
