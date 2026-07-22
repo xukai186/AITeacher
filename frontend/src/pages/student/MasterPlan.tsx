@@ -10,6 +10,7 @@ import {
   rejectRoadmap,
   type RoadmapMonth,
 } from "@/api/roadmap";
+import { groupLeavesByParent } from "./roadmapDisplay";
 
 const SUBJECT_LABELS: Record<string, string> = {
   politics: "政治",
@@ -225,9 +226,22 @@ function RoadmapTimeline({ months }: { months: RoadmapMonth[] }) {
               <div key={code} className="text-sm bg-slate-50 rounded p-2">
                 <p className="font-medium">{SUBJECT_LABELS[code] ?? code}</p>
                 <p className="text-slate-600">{block.focus}</p>
-                {block.syllabus_nodes?.length ? (
-                  <p className="text-xs text-slate-500">考纲：{block.syllabus_nodes.join("、")}</p>
-                ) : null}
+                {(() => {
+                  const resolved = block.syllabus_nodes_resolved?.length
+                    ? block.syllabus_nodes_resolved
+                    : (block.syllabus_nodes ?? []).map((name) => ({
+                        name,
+                        parent_name: null,
+                      }));
+                  const lines = groupLeavesByParent(resolved);
+                  return lines.length ? (
+                    <div className="text-xs text-slate-500 space-y-0.5">
+                      {lines.map((line) => (
+                        <p key={line}>{line}</p>
+                      ))}
+                    </div>
+                  ) : null;
+                })()}
                 {block.weekly_hours_hint != null ? (
                   <p className="text-xs text-slate-500">建议约 {block.weekly_hours_hint} 小时/周</p>
                 ) : null}
