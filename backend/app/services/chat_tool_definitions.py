@@ -86,7 +86,9 @@ SUBJECT_CHAT_TOOLS: list[dict[str, Any]] = [
         "function": {
             "name": "explain_question",
             "description": (
-                "讲解试卷中的某一题：返回题干、选项、学生作答、正确答案/评分要点与讲评提示。"
+                "讲解某份试卷（摸底/自测）内的某一题。"
+                "question_seq 是该卷内部题号，不是错题本列表序号。"
+                "学生说「错题本第 N 题」时请改用 list_wrong_book / explain_wrong_book_item。"
             ),
             "parameters": {
                 "type": "object",
@@ -98,11 +100,68 @@ SUBJECT_CHAT_TOOLS: list[dict[str, Any]] = [
                     "paper_id": {"type": "string"},
                     "question_seq": {
                         "type": "integer",
-                        "description": "题号（从 1 开始）；与 question_id 二选一。",
+                        "description": "试卷内题号（从 1 开始）；与 question_id 二选一。不是错题本序号。",
                     },
                     "question_id": {"type": "string"},
                 },
                 "required": ["paper_type", "paper_id"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "list_wrong_book",
+            "description": (
+                "列出当前科目错题本条目（与学生端错题本同序：创建时间倒序）。"
+                "返回 list_index（从 1 起），对应页面「错题 N」。"
+                "学生提到错题本第几题时，先调用本工具或直接用 explain_wrong_book_item。"
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "status": {
+                        "type": "string",
+                        "description": "筛选状态：active / mastered；省略则与页面默认一致（待掌握+已掌握）。",
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "返回条数上限；默认 20。",
+                    },
+                    "offset": {
+                        "type": "integer",
+                        "description": "偏移量；默认 0。",
+                    },
+                },
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "explain_wrong_book_item",
+            "description": (
+                "讲解错题本中的某一题（按学生端列表序号 list_index，或 item_id）。"
+                "用于「分析错题本第 N 题」；不要误用 explain_question 的试卷题号。"
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "list_index": {
+                        "type": "integer",
+                        "description": "错题本列表序号（从 1 开始），与页面「错题 N」一致。",
+                    },
+                    "item_id": {
+                        "type": "string",
+                        "description": "错题本条目 UUID；与 list_index 二选一。",
+                    },
+                    "status": {
+                        "type": "string",
+                        "description": "与 list_wrong_book 相同的状态筛选；省略则待掌握+已掌握。",
+                    },
+                },
+                "required": [],
             },
         },
     },

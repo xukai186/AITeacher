@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.services.agent_context import SubjectContext, get_subject_context
 from app.services.chat_paper_tools import explain_question
+from app.services.chat_wrong_book_tools import explain_wrong_book_item, list_wrong_book_for_chat
 from app.services.chat_plan_tools import (
     get_weekly_calendar,
     propose_master_plan,
@@ -310,6 +311,61 @@ class ChatToolExecutor:
                 paper_id=paper_id,
                 question_seq=int(question_seq) if question_seq is not None else None,
                 question_id=question_id,
+            )
+
+        if tool_name == "list_wrong_book":
+            if agent_type != "subject":
+                return {"error": "list_wrong_book is only available for subject agent"}
+            subject_code = default_subject_code
+            if not subject_code:
+                return {"error": "subject_code is required"}
+            status_raw = arguments.get("status")
+            status = str(status_raw) if status_raw else None
+            limit = arguments.get("limit", 20)
+            offset = arguments.get("offset", 0)
+            try:
+                limit_i = int(limit)
+                offset_i = int(offset)
+            except (TypeError, ValueError):
+                return {"error": "invalid limit or offset"}
+            return list_wrong_book_for_chat(
+                db,
+                student_user_id=student_user_id,
+                subject_code=str(subject_code),
+                status=status,
+                limit=limit_i,
+                offset=offset_i,
+            )
+
+        if tool_name == "explain_wrong_book_item":
+            if agent_type != "subject":
+                return {"error": "explain_wrong_book_item is only available for subject agent"}
+            subject_code = default_subject_code
+            if not subject_code:
+                return {"error": "subject_code is required"}
+            status_raw = arguments.get("status")
+            status = str(status_raw) if status_raw else None
+            list_index_raw = arguments.get("list_index")
+            item_id_raw = arguments.get("item_id")
+            item_id = None
+            if item_id_raw:
+                try:
+                    item_id = uuid.UUID(str(item_id_raw))
+                except Exception:
+                    return {"error": "invalid item_id"}
+            list_index = None
+            if list_index_raw is not None:
+                try:
+                    list_index = int(list_index_raw)
+                except (TypeError, ValueError):
+                    return {"error": "invalid list_index"}
+            return explain_wrong_book_item(
+                db,
+                student_user_id=student_user_id,
+                subject_code=str(subject_code),
+                list_index=list_index,
+                item_id=item_id,
+                status=status,
             )
 
         if tool_name == "propose_subject_plan":
