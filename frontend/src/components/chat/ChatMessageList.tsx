@@ -1,3 +1,5 @@
+import ChatRichText from "./ChatRichText";
+
 export type ChatMessage = {
   role: "user" | "assistant";
   content: string;
@@ -20,7 +22,11 @@ export default function ChatMessageList({
               : "self-start bg-slate-100 text-slate-900"
           }`}
         >
-          <div>{m.content}</div>
+          {m.role === "assistant" ? (
+            <ChatRichText text={m.content} />
+          ) : (
+            <div className="whitespace-pre-wrap break-words">{m.content}</div>
+          )}
           {m.role === "assistant" && m.toolsUsed && m.toolsUsed.length > 0 ? (
             <div className="mt-1 text-xs text-slate-500">
               已调用：{m.toolsUsed.join("、")}
@@ -31,4 +37,3 @@ export default function ChatMessageList({
     </div>
   );
 }
-
