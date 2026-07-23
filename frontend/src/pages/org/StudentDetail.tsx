@@ -472,12 +472,26 @@ export default function StudentDetail() {
 
       {tab === "wrong" && (
         <ul className="bg-white rounded shadow divide-y text-sm">
-          {wrong.data?.map((w) => (
-            <li key={w.id} className="px-4 py-3">
-              <span className="text-slate-500">{subjectLabel(w.subject_code)}</span> · {w.source_type}
-              <div className="mt-1">{w.question_snapshot_json?.stem ?? "（无题干）"}</div>
-            </li>
-          ))}
+          {wrong.data?.map((w) => {
+            const choices = Array.isArray(w.question_snapshot_json?.choices)
+              ? (w.question_snapshot_json.choices as { key?: string; text?: string }[])
+              : [];
+            return (
+              <li key={w.id} className="px-4 py-3 space-y-1">
+                <span className="text-slate-500">{subjectLabel(w.subject_code)}</span> · {w.source_type}
+                <div className="mt-1 font-medium">{w.question_snapshot_json?.stem ?? "（无题干）"}</div>
+                {choices.length > 0 ? (
+                  <ul className="text-slate-700 space-y-0.5">
+                    {choices.map((c, idx) => (
+                      <li key={String(c.key ?? idx)}>
+                        {String(c.key ?? "")}. {String(c.text ?? "")}
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
+              </li>
+            );
+          })}
           {wrong.data?.length === 0 && (
             <li className="px-4 py-6 text-center text-slate-500">暂无错题</li>
           )}
