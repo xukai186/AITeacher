@@ -4,9 +4,17 @@ from datetime import date, datetime
 from pydantic import BaseModel, ConfigDict, Field
 
 
+class SyllabusNodeResolvedOut(BaseModel):
+    id: str | None = None
+    name: str
+    parent_name: str | None = None
+
+
 class RoadmapMonthSubjectOut(BaseModel):
     focus: str = ""
     syllabus_nodes: list[str] = Field(default_factory=list)
+    syllabus_node_ids: list[str] = Field(default_factory=list)
+    syllabus_nodes_resolved: list[SyllabusNodeResolvedOut] = Field(default_factory=list)
     weekly_hours_hint: int | None = None
     notes: str = ""
 

@@ -11,7 +11,7 @@ _SAMPLE_PAST_EXAMS: dict[str, list[tuple[int, str, str, list[dict], str]]] = {
     "english": [
         (
             2024,
-            "阅读",
+            "主旨题",
             "【2024真题·阅读】According to the passage, the author mainly argues that…",
             [
                 {"key": "A", "text": "technology alone cannot solve social problems"},
@@ -23,7 +23,7 @@ _SAMPLE_PAST_EXAMS: dict[str, list[tuple[int, str, str, list[dict], str]]] = {
         ),
         (
             2023,
-            "翻译",
+            "词义选择",
             "【2023真题·翻译】将下列句子译为英文：随着人工智能的发展，教育方式正在发生深刻变化。",
             [
                 {"key": "A", "text": "With the development of AI, education is changing deeply."},
@@ -37,7 +37,7 @@ _SAMPLE_PAST_EXAMS: dict[str, list[tuple[int, str, str, list[dict], str]]] = {
     "math": [
         (
             2024,
-            "高数",
+            "导数",
             "【2024真题·高数】设函数 f(x)=x^2 ln x，则 f'(1) 等于（  ）",
             [
                 {"key": "A", "text": "0"},
@@ -49,7 +49,7 @@ _SAMPLE_PAST_EXAMS: dict[str, list[tuple[int, str, str, list[dict], str]]] = {
         ),
         (
             2023,
-            "线代",
+            "行列式",
             "【2023真题·线代】已知矩阵 A 为 2 阶可逆矩阵，则 |2A| 等于（  ）",
             [
                 {"key": "A", "text": "2|A|"},
@@ -63,7 +63,7 @@ _SAMPLE_PAST_EXAMS: dict[str, list[tuple[int, str, str, list[dict], str]]] = {
     "politics": [
         (
             2024,
-            "马原",
+            "实践观",
             "【2024真题·马原】实践是检验真理的唯一标准，这一论断体现了（  ）",
             [
                 {"key": "A", "text": "认识对实践的决定作用"},
@@ -75,7 +75,7 @@ _SAMPLE_PAST_EXAMS: dict[str, list[tuple[int, str, str, list[dict], str]]] = {
         ),
         (
             2023,
-            "史纲",
+            "五四运动",
             "【2023真题·史纲】新民主主义革命的开端是（  ）",
             [
                 {"key": "A", "text": "辛亥革命"},

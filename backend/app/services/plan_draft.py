@@ -58,9 +58,10 @@ class PlanDraftService:
                     student_user_id=student_user_id,
                     subject_codes=subject_codes,
                     today=day,
+                    month_slice=month_slice,
                 )
                 if drafted is not None:
-                    return self._apply_month_slice(drafted, month_slice, day)
+                    return self._apply_month_slice(drafted, month_slice, day, db=db)
             except Exception:
                 pass
         return self._apply_month_slice(
@@ -72,6 +73,7 @@ class PlanDraftService:
         ),
             month_slice,
             day,
+            db=db,
         )
 
     def light_revise_draft(
@@ -147,11 +149,15 @@ class PlanDraftService:
         subject_phases_json = {
             code: self.phases_for_subject(code, context) for code in revise_codes
         }
-        return PlanDraft(
+        draft = PlanDraft(
             weekly_goals_json=weekly_goals,
             daily_time_budget_json=daily_time_budget_json,
             subject_phases_json=subject_phases_json,
         )
+        month_slice = RoadmapContextService().current_month_slice(
+            db, student_user_id=student_user_id, today=day
+        )
+        return self._apply_month_slice(draft, month_slice, day, db=db)
 
     def phases_for_subject(self, code: str, context: dict) -> list[dict]:
         label = SUBJECT_LABELS.get(code, code)
@@ -202,24 +208,32 @@ class PlanDraftService:
         student_user_id: uuid.UUID,
         subject_codes: list[str],
         today: date,
+        month_slice: MonthSlice | None = None,
     ) -> PlanDraft | None:
         context = self._build_context(db, student_user_id=student_user_id, subject_codes=subject_codes)
         effective_subject_codes = self._effective_subject_codes(subject_codes, context)
         if not effective_subject_codes:
             return None
         budget_dates = [day.isoformat() for day in self._budget_dates(today)]
-        prompt = "\n".join(
+        current_month_leaves = self._month_leaves_by_subject(db, month_slice)
+        prompt_lines = [
+            "你是考研机构总规划老师。根据学生摸底与学情，起草首版学习计划。",
+            f"考试年份：{context.get('exam_year') or '未设置'}",
+            f"报考专业：{context.get('major_name') or '未设置'}",
+            f"英语科目：{context.get('english_track') or '未设置'}",
+            f"数学科目：{context.get('math_track') or '未设置'}",
+            f"CET状态：{context.get('cet_status') or '未填写'}",
+            f"数学基础：{context.get('math_mastery_level') or '未填写'}",
+            f"启用科目：{json.dumps(effective_subject_codes, ensure_ascii=False)}",
+            "学情摘要：",
+            json.dumps(context.get("subjects") or [], ensure_ascii=False),
+        ]
+        if current_month_leaves:
+            prompt_lines.append(
+                f"当月路线图叶子 current_month_leaves：{json.dumps(current_month_leaves, ensure_ascii=False)}"
+            )
+        prompt_lines.extend(
             [
-                "你是考研机构总规划老师。根据学生摸底与学情，起草首版学习计划。",
-                f"考试年份：{context.get('exam_year') or '未设置'}",
-                f"报考专业：{context.get('major_name') or '未设置'}",
-                f"英语科目：{context.get('english_track') or '未设置'}",
-                f"数学科目：{context.get('math_track') or '未设置'}",
-                f"CET状态：{context.get('cet_status') or '未填写'}",
-                f"数学基础：{context.get('math_mastery_level') or '未填写'}",
-                f"启用科目：{json.dumps(effective_subject_codes, ensure_ascii=False)}",
-                "学情摘要：",
-                json.dumps(context.get("subjects") or [], ensure_ascii=False),
                 "",
                 "规则约束：若数学科目为 none，严禁输出 math 科目阶段。",
                 "阶段备注建议：英语结合 CET 状态给出重点；数学结合数学基础给出难度梯度。",
@@ -249,6 +263,7 @@ class PlanDraftService:
                 ),
             ]
         )
+        prompt = "\n".join(prompt_lines)
         resp = self._gateway.generate(
             ModelGatewayRequest(
                 provider=policy.provider,
@@ -263,7 +278,11 @@ class PlanDraftService:
         )
 
     def _apply_month_slice(
-        self, draft: PlanDraft, month_slice: MonthSlice | None, today: date
+        self,
+        draft: PlanDraft,
+        month_slice: MonthSlice | None,
+        today: date,
+        db: Session | None = None,
     ) -> PlanDraft:
         if month_slice is None:
             return draft
@@ -290,15 +309,25 @@ class PlanDraftService:
             if not isinstance(block, dict):
                 continue
             focus = str(block.get("focus") or "").strip()
-            nodes = block.get("syllabus_nodes") or []
             notes = str(block.get("notes") or "").strip()
-            node_text = "、".join(str(n) for n in nodes if n)
+            leaf_names: list[str] = []
+            ids = block.get("syllabus_node_ids") or []
+            if ids and db is not None:
+                from app.services.roadmap_resolve import resolve_syllabus_nodes
+
+                leaf_names = [r["name"] for r in resolve_syllabus_nodes(db, list(ids))]
+            if not leaf_names:
+                leaf_names = [str(n) for n in (block.get("syllabus_nodes") or []) if n]
+            leaf_line = f"本月叶子：{'、'.join(leaf_names)}" if leaf_names else ""
             label = SUBJECT_LABELS.get(code, code)
+            primary = notes or (f"本月重点：{focus}" if focus else leaf_line)
+            if leaf_line and leaf_line not in primary:
+                primary = f"{primary}\n{leaf_line}" if primary else leaf_line
             subject_phases[code] = [
                 {
                     "title": f"{label} · {month_slice.label}",
                     "days": 7,
-                    "notes": notes or f"本月重点：{focus or node_text}",
+                    "notes": primary,
                 }
             ]
         return PlanDraft(
@@ -306,6 +335,25 @@ class PlanDraftService:
             daily_time_budget_json=daily_budget,
             subject_phases_json=subject_phases,
         )
+
+    @staticmethod
+    def _month_leaves_by_subject(
+        db: Session, month_slice: MonthSlice | None
+    ) -> dict[str, list[str]]:
+        if month_slice is None:
+            return {}
+        leaves: dict[str, list[str]] = {}
+        for code, block in month_slice.subjects.items():
+            if not isinstance(block, dict):
+                continue
+            ids = block.get("syllabus_node_ids") or []
+            if ids:
+                from app.services.roadmap_resolve import resolve_syllabus_nodes
+
+                leaves[code] = [r["name"] for r in resolve_syllabus_nodes(db, list(ids))]
+            elif block.get("syllabus_nodes"):
+                leaves[code] = [str(n) for n in block.get("syllabus_nodes") or [] if n]
+        return leaves
 
     def _draft_with_rules(
         self,

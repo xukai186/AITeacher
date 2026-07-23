@@ -1,5 +1,11 @@
 import { api } from "./client";
 
+export type SyllabusNodeResolved = {
+  id?: string | null;
+  name: string;
+  parent_name?: string | null;
+};
+
 export type RoadmapMonth = {
   month: string;
   label?: string;
@@ -7,6 +13,8 @@ export type RoadmapMonth = {
     string,
     {
       focus?: string;
+      syllabus_node_ids?: string[];
+      syllabus_nodes_resolved?: SyllabusNodeResolved[];
       syllabus_nodes?: string[];
       weekly_hours_hint?: number;
       notes?: string;

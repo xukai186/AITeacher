@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.models import RoadmapGenerationJob, StudyRoadmap, StudyRoadmapVersion
 from app.services.planning import PlanningService
+from app.services.roadmap_resolve import validate_months_leaf_ids
 from app.services.tasks import TaskGenerator
 
 
@@ -98,6 +99,9 @@ class RoadmapActivationService:
         if pending is None:
             roadmap.pending_version_id = None
             raise HTTPException(status.HTTP_404_NOT_FOUND, "pending roadmap version missing")
+        bad = validate_months_leaf_ids(db, pending.months_json)
+        if bad:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "路线图含无效考纲节点")
         roadmap.current_version_id = pending.id
         roadmap.pending_version_id = None
         roadmap.status = "active"
