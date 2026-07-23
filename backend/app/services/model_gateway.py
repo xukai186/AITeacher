@@ -126,6 +126,21 @@ class ModelGateway:
                         f"已获取第 {data.get('question_seq')} 题讲评材料："
                         f"{data.get('explanation_hint', '')}"
                     )
+                elif name == "list_wrong_book":
+                    text = (
+                        f"已列出错题本 {data.get('count', 0)} 条"
+                        f"（科目 {data.get('subject_code')}）。"
+                        "请按 list_index 对应页面「错题 N」讲解。"
+                    )
+                elif name == "explain_wrong_book_item":
+                    idx = data.get("list_index")
+                    stem = data.get("stem") or ""
+                    text = (
+                        f"已获取错题本第 {idx} 题讲评材料：{stem} "
+                        f"{data.get('explanation_hint', '')}"
+                        if not data.get("error")
+                        else f"错题本讲解失败：{data.get('error')}"
+                    )
                 elif name == "propose_subject_plan":
                     text = (
                         f"已为 {data.get('subject_code')} 更新分科计划至 v{data.get('version')}。"
@@ -231,6 +246,42 @@ class ModelGateway:
                     ToolCall(
                         id=f"call_{uuid.uuid4().hex[:8]}",
                         name="generate_daily_tasks",
+                        arguments="{}",
+                    ),
+                )
+            )
+
+        if "explain_wrong_book_item" in tool_names and re.search(
+            r"错题本", last_user
+        ) and re.search(r"讲|讲解|解释|分析|为什么|第.?题|item_id", last_user):
+            item_m = re.search(
+                r"item_id\s*=\s*([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})",
+                last_user,
+            )
+            if item_m:
+                args = {"item_id": item_m.group(1)}
+            else:
+                m = re.search(r"第\s*(\d+)\s*题", last_user)
+                idx = int(m.group(1)) if m else 1
+                args = {"list_index": idx}
+            return ModelCompletion(
+                tool_calls=(
+                    ToolCall(
+                        id=f"call_{uuid.uuid4().hex[:8]}",
+                        name="explain_wrong_book_item",
+                        arguments=json.dumps(args, ensure_ascii=False),
+                    ),
+                )
+            )
+
+        if "list_wrong_book" in tool_names and re.search(r"错题本", last_user) and re.search(
+            r"列出|有哪些|看看|显示", last_user
+        ):
+            return ModelCompletion(
+                tool_calls=(
+                    ToolCall(
+                        id=f"call_{uuid.uuid4().hex[:8]}",
+                        name="list_wrong_book",
                         arguments="{}",
                     ),
                 )

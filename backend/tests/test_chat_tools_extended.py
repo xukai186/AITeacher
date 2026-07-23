@@ -158,3 +158,157 @@ def test_mock_chat_triggers_explain_question(db_session):
         user_message="请讲解第1题",
     )
     assert "explain_question" in turn.tools_used
+
+
+def test_explain_wrong_book_item_matches_list_index(db_session):
+    from app.models import WrongBookItem
+    from datetime import datetime, timedelta, timezone
+
+    student = _seed_student(db_session)
+    now = datetime.now(timezone.utc)
+    older = WrongBookItem(
+        student_user_id=student.id,
+        subject_code="english",
+        source_type="placement",
+        source_id=None,
+        question_snapshot_json={"stem": "OLDER_STEM", "seq": 9, "q_type": "single_choice", "choices": []},
+        answer_snapshot_json={"content": "A"},
+        correct_snapshot_json={"answer_key": "B"},
+        status="active",
+    )
+    newer = WrongBookItem(
+        student_user_id=student.id,
+        subject_code="english",
+        source_type="self_test",
+        source_id=None,
+        question_snapshot_json={"stem": "NEWER_STEM", "seq": 2, "q_type": "single_choice", "choices": []},
+        answer_snapshot_json={"content": "C"},
+        correct_snapshot_json={"answer_key": "D"},
+        status="active",
+    )
+    db_session.add(older)
+    db_session.add(newer)
+    db_session.flush()
+    older.created_at = now - timedelta(hours=2)
+    newer.created_at = now - timedelta(hours=1)
+    db_session.commit()
+
+    executor = ChatToolExecutor()
+    listed = executor.execute(
+        db_session,
+        tool_name="list_wrong_book",
+        arguments={},
+        student_user_id=student.id,
+        default_subject_code="english",
+        agent_type="subject",
+    )
+    assert listed["count"] == 2
+    assert listed["items"][0]["list_index"] == 1
+    assert listed["items"][0]["stem"] == "NEWER_STEM"
+    assert listed["items"][1]["list_index"] == 2
+    assert listed["items"][1]["stem"] == "OLDER_STEM"
+
+    # list_index=1 must be newer item — NOT paper seq 1
+    explained = executor.execute(
+        db_session,
+        tool_name="explain_wrong_book_item",
+        arguments={"list_index": 1},
+        student_user_id=student.id,
+        default_subject_code="english",
+        agent_type="subject",
+    )
+    assert explained["stem"] == "NEWER_STEM"
+    assert explained["list_index"] == 1
+    assert explained["source_question_seq"] == 2
+    assert "错题本" in explained["explanation_hint"]
+
+    explained2 = executor.execute(
+        db_session,
+        tool_name="explain_wrong_book_item",
+        arguments={"list_index": 2},
+        student_user_id=student.id,
+        default_subject_code="english",
+        agent_type="subject",
+    )
+    assert explained2["stem"] == "OLDER_STEM"
+    assert explained2["source_question_seq"] == 9
+
+
+def test_mock_chat_wrong_book_uses_explain_wrong_book_item(db_session):
+    from app.models import WrongBookItem
+
+    student = _seed_student(db_session)
+    db_session.add(
+        WrongBookItem(
+            student_user_id=student.id,
+            subject_code="english",
+            source_type="placement",
+            question_snapshot_json={"stem": "WB_STEM", "seq": 5, "q_type": "single_choice"},
+            answer_snapshot_json={"content": "A"},
+            correct_snapshot_json={"answer_key": "B"},
+            status="active",
+        )
+    )
+    db_session.commit()
+
+    turn = ChatToolLoop(model_gateway=ModelGateway()).run(
+        db_session,
+        student_user_id=student.id,
+        agent_type="subject",
+        subject_code="english",
+        provider="mock",
+        model="mock-v1",
+        params={},
+        history_messages=[],
+        user_message="请分析错题本第1题",
+    )
+    assert "explain_wrong_book_item" in turn.tools_used
+    assert "explain_question" not in turn.tools_used
+    assert "WB_STEM" in turn.assistant_message or "错题本第 1 题" in turn.assistant_message
+
+
+def test_mock_chat_wrong_book_explain_uses_item_id(db_session):
+    from app.models import WrongBookItem
+
+    student = _seed_student(db_session)
+    older = WrongBookItem(
+        student_user_id=student.id,
+        subject_code="english",
+        source_type="placement",
+        question_snapshot_json={"stem": "OLDER_STEM", "seq": 1, "q_type": "single_choice"},
+        answer_snapshot_json={"content": "A"},
+        correct_snapshot_json={"answer_key": "B"},
+        status="active",
+    )
+    newer = WrongBookItem(
+        student_user_id=student.id,
+        subject_code="english",
+        source_type="self_test",
+        question_snapshot_json={"stem": "NEWER_STEM", "seq": 2, "q_type": "single_choice"},
+        answer_snapshot_json={"content": "C"},
+        correct_snapshot_json={"answer_key": "D"},
+        status="active",
+    )
+    db_session.add_all([older, newer])
+    db_session.commit()
+    db_session.refresh(older)
+
+    # List order is created_at desc → newer is list_index 1. Point at older via item_id.
+    turn = ChatToolLoop(model_gateway=ModelGateway()).run(
+        db_session,
+        student_user_id=student.id,
+        agent_type="subject",
+        subject_code="english",
+        provider="mock",
+        model="mock-v1",
+        params={},
+        history_messages=[],
+        user_message=(
+            f"请讲解错题本条目 item_id={older.id}（页面错题 2）。"
+            "结合我的当时作答说明错因与正确思路。"
+        ),
+    )
+    assert "explain_wrong_book_item" in turn.tools_used
+    assert "explain_question" not in turn.tools_used
+    assert "OLDER_STEM" in turn.assistant_message
+    assert "NEWER_STEM" not in turn.assistant_message
