@@ -88,6 +88,38 @@ def test_explain_second_request_uses_cache_without_tool_loop(client, db_session,
     assert body["explanation_text"] == cached_text
 
 
+def test_explain_regenerate_failure_keeps_cached_text(client, db_session, monkeypatch):
+    student = _seed_student(db_session)
+    item = _seed_item(db_session, student, explanation_text="old")
+    old_ts = datetime(2020, 1, 1, tzinfo=timezone.utc)
+    item.explanation_created_at = old_ts
+    db_session.commit()
+
+    def _fail_run(*_args, **_kwargs):
+        return ChatTurnResult(
+            assistant_message=(
+                "模型调用失败，请检查模型策略中的 base_url、模型名与 api_key。"
+                "（RuntimeError: boom）"
+            )
+        )
+
+    monkeypatch.setattr(ChatToolLoop, "run", _fail_run)
+
+    token = _token(client)
+    headers = {"Authorization": f"Bearer {token}"}
+    resp = client.post(
+        f"/student/wrong-book/{item.id}/explain",
+        json={"regenerate": True},
+        headers=headers,
+    )
+    assert resp.status_code == 502
+    assert "模型调用失败" in resp.json()["detail"]
+
+    db_session.refresh(item)
+    assert item.explanation_text == "old"
+    assert item.explanation_created_at == old_ts
+
+
 def test_explain_regenerate_calls_model_and_overwrites(client, db_session, monkeypatch):
     student = _seed_student(db_session)
     item = _seed_item(db_session, student, explanation_text="old")

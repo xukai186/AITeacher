@@ -4,6 +4,7 @@ import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
+from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -67,6 +68,11 @@ class WrongBookExplainService:
             history_messages=[],
             user_message=EXPLAIN_USER_MESSAGE_TEMPLATE.format(item_id=item.id),
         )
+        if ChatToolLoop.is_failure_assistant_message(turn.assistant_message):
+            raise HTTPException(
+                status.HTTP_502_BAD_GATEWAY,
+                detail=turn.assistant_message,
+            )
         item.explanation_text = turn.assistant_message
         item.explanation_created_at = datetime.now(timezone.utc)
         db.flush()

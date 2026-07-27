@@ -13,6 +13,8 @@ from app.services.model_gateway import ModelGateway, ModelCompletion, ToolCall
 
 TOOL_CALLS_PREFIX = "__TOOL_CALLS__:"
 MAX_TOOL_ITERATIONS = 5
+MODEL_FAILURE_MESSAGE_PREFIX = "模型调用失败"
+UNABLE_TO_COMPLETE_MESSAGE = "抱歉，我暂时无法完成这个请求，请稍后再试。"
 
 
 @dataclass
@@ -66,7 +68,7 @@ class ChatToolLoop:
             except Exception as exc:
                 return ChatTurnResult(
                     assistant_message=(
-                        "模型调用失败，请检查模型策略中的 base_url、模型名与 api_key。"
+                        f"{MODEL_FAILURE_MESSAGE_PREFIX}，请检查模型策略中的 base_url、模型名与 api_key。"
                         f"（{type(exc).__name__}: {exc}）"
                     ),
                     tools_used=tools_used,
@@ -113,7 +115,7 @@ class ChatToolLoop:
                 )
 
         if not final_text:
-            final_text = "抱歉，我暂时无法完成这个请求，请稍后再试。"
+            final_text = UNABLE_TO_COMPLETE_MESSAGE
 
         # Messages after history + user turn (tool-call rows and tool results only).
         persist_start = 1 + len(history_messages) + 1
@@ -124,6 +126,12 @@ class ChatToolLoop:
             tools_used=tools_used,
             api_messages=turn_messages,
         )
+
+    @staticmethod
+    def is_failure_assistant_message(text: str) -> bool:
+        if text.startswith(MODEL_FAILURE_MESSAGE_PREFIX):
+            return True
+        return text == UNABLE_TO_COMPLETE_MESSAGE
 
     @staticmethod
     def _system_prompt(agent_type: str, subject_code: str | None, tools: list[dict]) -> str:
