@@ -43,3 +43,13 @@ class WrongBookPracticeOut(BaseModel):
     status: str
     consecutive_correct_count: int
     mastered: bool
+
+
+class WrongBookExplainIn(BaseModel):
+    regenerate: bool = False
+
+
+class WrongBookExplainOut(BaseModel):
+    explanation_text: str
+    from_cache: bool
+    explanation_created_at: datetime | None
