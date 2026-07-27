@@ -320,4 +320,68 @@ describe("WrongBook page", () => {
     fireEvent.click(screen.getByRole("button", { name: /重试/ }));
     await waitFor(() => expect(screen.getByText(/重试成功讲解/)).toBeTruthy());
   });
+
+  it("retries regenerate with regenerate: true after regenerate failure", async () => {
+    let explainCalls = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: any, init?: RequestInit) => {
+        const url = String(input);
+        if (url.includes("/api/student/me")) {
+          return new Response(
+            JSON.stringify({
+              id: "u1",
+              email: "s@example.com",
+              name: "s",
+              exam_year: 2027,
+              subject_codes: ["english"],
+            }),
+            { status: 200 },
+          );
+        }
+        if (url.includes("/api/student/wrong-book/w1/explain") && init?.method === "POST") {
+          explainCalls += 1;
+          const body = JSON.parse(String(init.body));
+          if (explainCalls === 1) {
+            expect(body.regenerate).toBe(false);
+            return new Response(
+              JSON.stringify({
+                explanation_text: "这是讲解：正确答案是 A。",
+                from_cache: false,
+                explanation_created_at: "2026-07-27T12:00:00Z",
+              }),
+              { status: 200 },
+            );
+          }
+          if (explainCalls === 2) {
+            expect(body.regenerate).toBe(true);
+            return new Response(JSON.stringify({ detail: "regen boom" }), { status: 500 });
+          }
+          expect(body.regenerate).toBe(true);
+          return new Response(
+            JSON.stringify({
+              explanation_text: "重新生成成功",
+              from_cache: false,
+              explanation_created_at: "2026-07-27T13:00:00Z",
+            }),
+            { status: 200 },
+          );
+        }
+        if (url.includes("/api/student/wrong-book")) {
+          return new Response(JSON.stringify([wrongBookItemFixture()]), { status: 200 });
+        }
+        return new Response(JSON.stringify({ detail: "not found" }), { status: 404 });
+      }),
+    );
+
+    renderPage();
+    await waitFor(() => expect(screen.getByText("题干")).toBeTruthy());
+    fireEvent.click(screen.getByRole("button", { name: /错题讲解/ }));
+    await waitFor(() => expect(screen.getByRole("button", { name: /重新生成讲解/ })).toBeTruthy());
+    fireEvent.click(screen.getByRole("button", { name: /重新生成讲解/ }));
+    await waitFor(() => expect(screen.getByText(/讲解失败|请求失败/)).toBeTruthy());
+    fireEvent.click(screen.getByRole("button", { name: /重试/ }));
+    await waitFor(() => expect(screen.getByText(/重新生成成功/)).toBeTruthy());
+    expect(explainCalls).toBe(3);
+  });
 });

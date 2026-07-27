@@ -147,14 +147,17 @@ function WrongBookItemCard({
   const [explainLoading, setExplainLoading] = useState(false);
   const [explainText, setExplainText] = useState<string | null>(null);
   const [explainError, setExplainError] = useState<string | null>(null);
+  const [lastExplainRegenerate, setLastExplainRegenerate] = useState(false);
 
   async function runExplain(options?: { regenerate?: boolean }) {
     if (explainLoading) return;
+    const regenerate = options?.regenerate ?? false;
+    setLastExplainRegenerate(regenerate);
     setExplainOpen(true);
     setExplainLoading(true);
     setExplainError(null);
     try {
-      const resp = await explainWrongItem(item.id, { regenerate: options?.regenerate ?? false });
+      const resp = await explainWrongItem(item.id, { regenerate });
       setExplainText(resp.explanation_text);
     } catch (err) {
       setExplainError((err as Error).message || "讲解失败");
@@ -328,7 +331,7 @@ function WrongBookItemCard({
                 type="button"
                 className="text-sm text-slate-900 underline"
                 disabled={explainLoading}
-                onClick={() => void runExplain({ regenerate: false })}
+                onClick={() => void runExplain({ regenerate: lastExplainRegenerate })}
               >
                 重试
               </button>
