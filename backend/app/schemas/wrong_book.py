@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class WrongBookItemOut(BaseModel):
@@ -21,6 +21,17 @@ class WrongBookItemOut(BaseModel):
     mastered_at: datetime | None
     last_practice_at: datetime | None
     created_at: datetime
+    has_explanation: bool = False
+
+    @model_validator(mode="wrap")
+    @classmethod
+    def _has_explanation_from_orm(cls, data, handler):
+        if hasattr(data, "explanation_text"):
+            out = handler(data)
+            return out.model_copy(
+                update={"has_explanation": bool(data.explanation_text)}
+            )
+        return handler(data)
 
 
 class WrongBookPracticeIn(BaseModel):
