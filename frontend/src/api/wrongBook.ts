@@ -15,6 +15,13 @@ export type WrongBookItemOut = {
   mastered_at: string | null;
   last_practice_at: string | null;
   created_at: string;
+  has_explanation: boolean;
+};
+
+export type WrongBookExplainOut = {
+  explanation_text: string;
+  from_cache: boolean;
+  explanation_created_at: string | null;
 };
 
 export type WrongBookPracticeOut = {
@@ -53,5 +60,12 @@ export function practiceWrongItem(itemId: string, content: string) {
 export function archiveWrongItem(itemId: string) {
   return api<WrongBookItemOut>(`/student/wrong-book/${itemId}/archive`, {
     method: "POST",
+  });
+}
+
+export function explainWrongItem(itemId: string, options?: { regenerate?: boolean }) {
+  return api<WrongBookExplainOut>(`/student/wrong-book/${itemId}/explain`, {
+    method: "POST",
+    body: JSON.stringify({ regenerate: options?.regenerate ?? false }),
   });
 }
