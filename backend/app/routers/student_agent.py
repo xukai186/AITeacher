@@ -1,5 +1,5 @@
 import uuid
-from datetime import date, timedelta
+from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
@@ -48,7 +48,7 @@ def enqueue_apply_recommendations(
     db: Session = Depends(get_db),
     student: User = Depends(require_roles(UserRole.student)),
 ) -> EnqueuePlanReviewOut:
-    day = target_date or (date.today() + timedelta(days=1))
+    day = target_date or date.today()
     enqueued = PlanReviewJobService().enqueue(
         db,
         student_user_id=student.id,

@@ -15,6 +15,7 @@ class DailyTaskOut(BaseModel):
     status: str
     est_minutes: int
     title: str
+    payload_json: dict | None = None
     created_at: datetime
 
 

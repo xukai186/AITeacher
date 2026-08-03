@@ -136,7 +136,7 @@ export default function Report() {
                     applyTasks.mutate();
                   }}
                 >
-                  {applyTasks.isPending ? "生成中…" : "生成明日任务"}
+                  {applyTasks.isPending ? "生成中…" : "生成今日任务"}
                 </button>
               ) : null}
             </div>

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass, field
-from datetime import date, timedelta
+from datetime import date
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -32,7 +32,7 @@ class DailyGenerationResult:
 
 
 class DailyTaskGenerationService:
-    """每日 00:05 定时任务：为所有启用科目的学生生成次日计划（PlanReview）。"""
+    """每日 00:05 定时任务：为所有启用科目的学生生成当日计划（PlanReview）。"""
 
     def run(
         self,
@@ -42,7 +42,8 @@ class DailyTaskGenerationService:
         target_date: date | None = None,
     ) -> DailyGenerationResult:
         today = as_of or date.today()
-        day = target_date or (today + timedelta(days=1))
+        # Default to today so morning cron materializes the same calendar day.
+        day = target_date or today
 
         pairs = db.execute(
             select(StudentSubject.student_user_id, StudentSubject.subject_code).where(

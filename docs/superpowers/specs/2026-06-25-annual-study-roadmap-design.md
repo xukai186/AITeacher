@@ -40,7 +40,7 @@
             → LLM / 规则降级 → StudyRoadmapVersion (pending)
             → 学生确认 → current
             → PlanDraftService 读取当月切片 → 7 天 MasterPlan + SubjectPlan
-            → 每日任务生成（现有链路）
+            → 每日任务生成（现有链路；周 focus 节点级联见 `2026-08-03-weekly-goals-to-daily-cascade-design.md`）
 ```
 
 **改造：** `PlacementService.submit` 当前每交一科即 `create_initial_plans`，改为仅在 `PlacementService.all_subjects_completed(student)` 为真时触发路线图 Job；单科交卷仍更新掌握度、错题、PlanReviewJob。
@@ -297,6 +297,7 @@ current_month_slice(db, student_user_id, today: date) -> MonthSlice | None
 |------|------|
 | `2026-06-02-student-exam-profile-master-plan-design.md` | 档案仍是路线图输入；档案 confirm 后**不再**立即生成可执行总计划，改为摸底后生成路线图 |
 | `2026-06-25-exam-profile-light-revise-and-task-weights-design.md` | 轻量修订仅战术层；路线图 OUT OF SCOPE |
+| `2026-08-03-weekly-goals-to-daily-cascade-design.md` | 当月切片叶子 → 结构化周目标 → 日任务级联（战术层下游） |
 | P12 待确认 | 战术层预算 >15% 仍 pending；路线图有独立 pending |
 
 ---

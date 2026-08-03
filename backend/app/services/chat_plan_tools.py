@@ -155,7 +155,7 @@ def request_plan_adjustment(
     target_date: date | None = None,
     reason: str | None = None,
 ) -> dict[str, Any]:
-    day = target_date or (date.today() + timedelta(days=1))
+    day = target_date or date.today()
     enqueued = PlanReviewJobService().enqueue(
         db,
         student_user_id=student_user_id,

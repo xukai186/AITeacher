@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass, field
-from datetime import date, timedelta
+from datetime import date
 
 from sqlalchemy.orm import Session
 
@@ -33,7 +33,7 @@ class PlanReviewService:
         trigger: str,
         target_date: date | None = None,
     ) -> PlanReviewResult:
-        day = target_date or (date.today() + timedelta(days=1))
+        day = target_date or date.today()
         tools = default_tool_registry
 
         apply: ApplyRecommendationsResult = tools.call(

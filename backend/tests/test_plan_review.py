@@ -142,6 +142,19 @@ def test_master_planner_trims_low_priority_study_tasks(db_session):
     assert study.status == "cancelled"
 
 
+def test_plan_review_service_defaults_target_date_to_today(db_session):
+    student = _seed_student(db_session)
+    TaskGenerator().generate_next_7_days(db_session, student_user_id=student.id, today=date.today())
+
+    result = PlanReviewService().run_subject_review(
+        db_session,
+        student_user_id=student.id,
+        subject_code="english",
+        trigger="test",
+    )
+    assert result.target_date == date.today()
+
+
 def test_plan_review_service_runs_tools(db_session):
     student = _seed_student(db_session)
     TaskGenerator().generate_next_7_days(db_session, student_user_id=student.id, today=date.today())
