@@ -36,6 +36,19 @@ function mockFetchRouter() {
                 est_minutes: 60,
                 title: "英语 学习任务",
                 created_at: "2026-05-28T00:00:00Z",
+                payload_json: { source: "weekly_goal" },
+              },
+              {
+                id: "t2",
+                date: "2026-05-28",
+                subject_code: "english",
+                type: "review_wrong",
+                ref_id: null,
+                status: "pending",
+                est_minutes: 30,
+                title: "薄弱点复习",
+                created_at: "2026-05-28T00:00:00Z",
+                payload_json: { source: "report_weak" },
               },
             ],
           }),
@@ -123,6 +136,13 @@ describe("Workspace tasks", () => {
     mockFetchRouter();
     renderWorkspace();
     await waitFor(() => expect(screen.getByText("英语 学习任务")).toBeTruthy());
+  });
+
+  it("renders source badges for weekly goal and weak review tasks", async () => {
+    mockFetchRouter();
+    renderWorkspace();
+    await waitFor(() => expect(screen.getByText("本周推进")).toBeTruthy());
+    expect(screen.getByText("薄弱复习")).toBeTruthy();
   });
 
   it("renders exam profile summary when profile is complete", async () => {

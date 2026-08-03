@@ -40,6 +40,16 @@ const MATH_LEVEL_LABELS: Record<string, string> = {
   strong: "很好",
 };
 
+const TASK_SOURCE_LABELS: Record<string, string> = {
+  weekly_goal: "本周推进",
+  report_weak: "薄弱复习",
+};
+
+function taskSourceBadge(source: string | undefined): string | null {
+  if (!source) return null;
+  return TASK_SOURCE_LABELS[source] ?? null;
+}
+
 export default function Workspace() {
   const navigate = useNavigate();
   const qc = useQueryClient();
@@ -304,15 +314,25 @@ export default function Workspace() {
               <ul className="space-y-2">
                 {(todayTasks.data?.tasks ?? [])
                   .filter((t) => !current || t.subject_code === current)
-                  .map((t) => (
-                    <li key={t.id} className="border rounded p-3">
-                      <div className="flex justify-between text-sm">
-                        <div className="font-medium">{t.title}</div>
-                        <div className="text-slate-500">{t.status}</div>
-                      </div>
-                      <div className="text-xs text-slate-500 mt-1">预计 {t.est_minutes} 分钟</div>
-                    </li>
-                  ))}
+                  .map((t) => {
+                    const badge = taskSourceBadge(t.payload_json?.source);
+                    return (
+                      <li key={t.id} className="border rounded p-3">
+                        <div className="flex justify-between text-sm">
+                          <div className="font-medium flex items-center gap-2">
+                            {t.title}
+                            {badge ? (
+                              <span className="text-xs px-2 py-0.5 rounded bg-slate-100 text-slate-600 font-normal">
+                                {badge}
+                              </span>
+                            ) : null}
+                          </div>
+                          <div className="text-slate-500">{t.status}</div>
+                        </div>
+                        <div className="text-xs text-slate-500 mt-1">预计 {t.est_minutes} 分钟</div>
+                      </li>
+                    );
+                  })}
               </ul>
             )}
           </div>

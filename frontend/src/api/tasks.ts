@@ -1,5 +1,11 @@
 import { api } from "./client";
 
+export type DailyTaskPayload = {
+  source?: string;
+  syllabus_node_id?: string;
+  [key: string]: unknown;
+};
+
 export type DailyTaskOut = {
   id: string;
   date: string;
@@ -10,6 +16,7 @@ export type DailyTaskOut = {
   est_minutes: number;
   title: string;
   created_at: string;
+  payload_json?: DailyTaskPayload | null;
 };
 
 export type TodayTasksOut = {

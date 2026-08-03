@@ -137,11 +137,11 @@ describe("Report page", () => {
     await waitFor(() => expect(screen.getByText("新增错题：3")).toBeTruthy());
   });
 
-  it("applies recommendations as tomorrow tasks", async () => {
+  it("applies recommendations as today tasks", async () => {
     mockFetch();
     renderPage();
-    await waitFor(() => expect(screen.getByText("生成明日任务")).toBeTruthy());
-    fireEvent.click(screen.getByText("生成明日任务"));
+    await waitFor(() => expect(screen.getByText("生成今日任务")).toBeTruthy());
+    fireEvent.click(screen.getByText("生成今日任务"));
     await waitFor(() => expect(screen.getByText(/已为 2026-05-30 生成 2 项任务/)).toBeTruthy());
   });
 });
