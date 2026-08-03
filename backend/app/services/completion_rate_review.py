@@ -26,7 +26,7 @@ class CompletionRateReviewService:
         target_date: date | None = None,
     ) -> bool:
         today = as_of or date.today()
-        day = target_date or (today + timedelta(days=1))
+        day = target_date or today
 
         rates: list[float] = []
         for offset in range(COMPLETION_WINDOW_DAYS):
@@ -73,7 +73,7 @@ class CompletionRateReviewService:
         target_date: date | None = None,
     ) -> int:
         today = as_of or date.today()
-        day = target_date or (today + timedelta(days=1))
+        day = target_date or today
         pairs = db.execute(
             select(StudentSubject.student_user_id, StudentSubject.subject_code).where(
                 StudentSubject.enabled.is_(True)

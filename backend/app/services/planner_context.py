@@ -71,9 +71,7 @@ def trigger_plan_review(
     subject_code: str | None = None,
     target_date: date | None = None,
 ) -> list[dict[str, Any]]:
-    from datetime import timedelta
-
-    day = target_date or (date.today() + timedelta(days=1))
+    day = target_date or date.today()
 
     if subject_code:
         codes = [subject_code]
