@@ -25,7 +25,7 @@ export default function SelfTestPaper() {
     enabled: Boolean(id),
   });
 
-  const generation = useWaitForPaperGeneration(paper.data, paper.refetch);
+  const generation = useWaitForPaperGeneration(paper.data, paper.refetch, id);
 
   const questions = paper.data?.questions ?? [];
   const [answers, setAnswers] = useState<AnswersState>({});
