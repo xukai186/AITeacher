@@ -1,9 +1,11 @@
+import uuid
 from datetime import date, timedelta
 
 from sqlalchemy import select
+from sqlalchemy.orm import Session
 
 from app.auth.security import hash_password
-from app.models import DailyTask, PlanReviewJob, StudentProfile, StudentSubject, UserRole
+from app.models import DailyTask, MasterPlan, MasterPlanVersion, PlanReviewJob, StudentProfile, StudentSubject, SyllabusNode, UserRole, WrongBookItem
 from app.services.plan_review_jobs import PlanReviewJobRunner
 from app.services.planning import PlanningService
 from app.services.subject_agent import SubjectAgentService
@@ -28,6 +30,48 @@ def _seed_student(db):
     PlanningService().create_initial_plans(db, student_user_id=student.id)
     db.commit()
     return student
+
+
+def _syllabus_nodes(db, subject_code: str, names: list[str]) -> list[SyllabusNode]:
+    nodes = [
+        SyllabusNode(subject_code=subject_code, name=name, weight=1) for name in names
+    ]
+    db.add_all(nodes)
+    db.flush()
+    return nodes
+
+
+def _set_focus_goals(db, student, subject_code: str, node_ids: list[str]) -> None:
+    plan = db.execute(
+        select(MasterPlan).where(MasterPlan.student_user_id == student.id)
+    ).scalar_one()
+    version = db.get(MasterPlanVersion, plan.current_version_id)
+    version.weekly_goals_json = [
+        {
+            "kind": "focus",
+            "subject_code": subject_code,
+            "title": "本周推进",
+            "description": "聚焦叶子节点",
+            "syllabus_node_ids": node_ids,
+        }
+    ]
+    db.flush()
+
+
+def _add_wrong_item(db, student, subject_code: str, node_id) -> None:
+    db.add(
+        WrongBookItem(
+            student_user_id=student.id,
+            subject_code=subject_code,
+            knowledge_node_id=node_id,
+            source_type="self_test",
+            source_id=uuid.uuid4(),
+            question_snapshot_json={"stem": "q"},
+            answer_snapshot_json={"content": "x"},
+            correct_snapshot_json={"answer_key": "y"},
+        )
+    )
+    db.flush()
 
 
 def _token(client):
@@ -114,3 +158,73 @@ def test_subject_agent_service_idempotent(db_session):
     )
     assert out2.created_count == 0
     assert out2.skipped_count >= out1.created_count
+
+
+def test_apply_recommendations_defaults_to_today(db_session):
+    student = _seed_student(db_session)
+    nodes = _syllabus_nodes(db_session, "english", ["阅读 A"])
+    _set_focus_goals(db_session, student, "english", [str(nodes[0].id)])
+
+    out = SubjectAgentService().apply_report_recommendations(
+        db_session,
+        student_user_id=student.id,
+        subject_code="english",
+    )
+    assert out.target_date == date.today()
+
+
+def test_apply_uses_weekly_focus_nodes_and_one_weak_review(db_session):
+    student = _seed_student(db_session)
+    nodes = _syllabus_nodes(db_session, "english", ["阅读 A", "阅读 B"])
+    node_a, node_b = nodes
+    _set_focus_goals(
+        db_session, student, "english", [str(node_a.id), str(node_b.id)]
+    )
+    _add_wrong_item(db_session, student, "english", node_a.id)
+    db_session.commit()
+
+    out = SubjectAgentService().apply_report_recommendations(
+        db_session,
+        student_user_id=student.id,
+        subject_code="english",
+        target_date=date.today(),
+    )
+    db_session.commit()
+
+    focus_ids = {str(node_a.id), str(node_b.id)}
+    study_tasks = [
+        t
+        for t in out.created
+        if t.type == "study" and t.payload_json.get("source") == "weekly_goal"
+    ]
+    assert study_tasks
+    assert all(t.payload_json.get("syllabus_node_id") in focus_ids for t in study_tasks)
+    assert all(t.title for t in study_tasks)
+
+    weak_tasks = [
+        t
+        for t in out.created
+        if t.type == "review_wrong" and t.payload_json.get("source") == "report_weak"
+    ]
+    assert len(weak_tasks) <= 1
+    if weak_tasks:
+        assert weak_tasks[0].title
+
+
+def test_apply_falls_back_to_report_when_no_focus(db_session):
+    student = _seed_student(db_session)
+    nodes = _syllabus_nodes(db_session, "english", ["语法 C"])
+    _add_wrong_item(db_session, student, "english", nodes[0].id)
+    db_session.commit()
+
+    out = SubjectAgentService().apply_report_recommendations(
+        db_session,
+        student_user_id=student.id,
+        subject_code="english",
+        target_date=date.today(),
+    )
+    db_session.commit()
+
+    rec_tasks = [t for t in out.created if t.payload_json.get("source") == "report_recommendation"]
+    assert rec_tasks
+    assert any(t.type == "review_wrong" for t in rec_tasks)
