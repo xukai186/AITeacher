@@ -4,6 +4,8 @@
 **状态：** 已实现  
 **依赖：** 学科 Agent `/chat`、`explain_wrong_book_item` / `list_wrong_book`、错题本页 `WrongBook.tsx`、`ChatRichText`
 
+> **讲解持久化与 API 通道：** 已由 [`2026-07-27-wrong-book-explanation-cache-design.md`](2026-07-27-wrong-book-explanation-cache-design.md) 取代（落库 + `POST /student/wrong-book/{id}/explain`）。本规格 §2「持久化 / 实现路径」及经 `/chat` 写入会话的描述不再适用；页内展开、答案可泄露、`item_id` 优先等其余决策仍有效。
+
 ---
 
 ## 1. 背景与目标

@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, func
+from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, func
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -33,6 +33,11 @@ class WrongBookItem(Base):
     first_correct_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_practice_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     mastered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    explanation_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    explanation_created_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False

@@ -45,6 +45,8 @@ def _sync_test_schema(connection, *, commit: bool = False) -> None:
             ("first_correct_at", "TIMESTAMP WITH TIME ZONE"),
             ("last_practice_at", "TIMESTAMP WITH TIME ZONE"),
             ("mastered_at", "TIMESTAMP WITH TIME ZONE"),
+            ("explanation_text", "TEXT"),
+            ("explanation_created_at", "TIMESTAMP WITH TIME ZONE"),
         ):
             if col not in wb_cols:
                 connection.execute(text(f"ALTER TABLE wrong_book_items ADD COLUMN {col} {ddl}"))

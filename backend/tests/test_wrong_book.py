@@ -177,3 +177,26 @@ def test_wrong_book_supports_knowledge_node_filter(client, db_session):
     assert len(out) == 1
     assert out[0]["knowledge_node_id"] == str(n1.id)
 
+
+def test_wrong_book_list_includes_has_explanation(client, db_session):
+    student = _seed_student(db_session)
+    token = _token(client)
+    headers = {"Authorization": f"Bearer {token}"}
+    item = WrongBookItem(
+        student_user_id=student.id,
+        subject_code="english",
+        source_type="self_test",
+        question_snapshot_json={"stem": "S"},
+        answer_snapshot_json={"content": "A"},
+        correct_snapshot_json={"answer_key": "B"},
+        status="active",
+        explanation_text="cached explain",
+    )
+    db_session.add(item)
+    db_session.commit()
+
+    resp = client.get("/student/wrong-book?subject_code=english", headers=headers)
+    assert resp.status_code == 200
+    row = next(r for r in resp.json() if r["id"] == str(item.id))
+    assert row["has_explanation"] is True
+

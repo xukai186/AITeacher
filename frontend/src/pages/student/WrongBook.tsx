@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSearchParams } from "react-router-dom";
-import { postChat } from "@/api/chat";
 import { fetchStudentMe } from "@/api/me";
 import {
   archiveWrongItem,
+  explainWrongItem,
   listWrongBook,
   practiceWrongItem,
   type WrongBookItemOut,
@@ -147,27 +147,26 @@ function WrongBookItemCard({
   const [explainLoading, setExplainLoading] = useState(false);
   const [explainText, setExplainText] = useState<string | null>(null);
   const [explainError, setExplainError] = useState<string | null>(null);
+  const [lastExplainRegenerate, setLastExplainRegenerate] = useState(false);
 
-  async function runExplain() {
+  async function runExplain(options?: { regenerate?: boolean }) {
     if (explainLoading) return;
+    const regenerate = options?.regenerate ?? false;
+    setLastExplainRegenerate(regenerate);
     setExplainOpen(true);
     setExplainLoading(true);
     setExplainError(null);
     try {
-      const resp = await postChat({
-        agent_type: "subject",
-        subject_code: item.subject_code,
-        message:
-          `请讲解错题本条目 item_id=${item.id}（页面错题 ${index}）。` +
-          "结合我的当时作答说明错因与正确思路。",
-      });
-      setExplainText(resp.assistant_message);
+      const resp = await explainWrongItem(item.id, { regenerate });
+      setExplainText(resp.explanation_text);
     } catch (err) {
       setExplainError((err as Error).message || "讲解失败");
     } finally {
       setExplainLoading(false);
     }
   }
+
+  const showRegenerate = Boolean(explainText || item.has_explanation);
 
   return (
     <li className="bg-white shadow rounded p-4 space-y-2">
@@ -285,10 +284,23 @@ function WrongBookItemCard({
           type="button"
           className="text-sm text-slate-900 underline disabled:opacity-50"
           disabled={explainLoading}
-          onClick={() => void runExplain()}
+          onClick={() => void runExplain({ regenerate: false })}
         >
           {explainLoading ? "讲解中…" : "错题讲解"}
         </button>
+        {showRegenerate ? (
+          <button
+            type="button"
+            className="text-sm text-slate-600 underline disabled:opacity-50"
+            disabled={explainLoading}
+            onClick={() => void runExplain({ regenerate: true })}
+          >
+            重新生成讲解
+          </button>
+        ) : null}
+        {item.has_explanation && !explainOpen ? (
+          <span className="text-xs text-slate-500">已讲解</span>
+        ) : null}
         {explainText && !explainOpen ? (
           <button
             type="button"
@@ -319,7 +331,7 @@ function WrongBookItemCard({
                 type="button"
                 className="text-sm text-slate-900 underline"
                 disabled={explainLoading}
-                onClick={() => void runExplain()}
+                onClick={() => void runExplain({ regenerate: lastExplainRegenerate })}
               >
                 重试
               </button>

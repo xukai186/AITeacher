@@ -6,11 +6,14 @@ from app.auth.permissions import require_roles
 from app.database import get_db
 from app.models import User, UserRole
 from app.schemas.wrong_book import (
+    WrongBookExplainIn,
+    WrongBookExplainOut,
     WrongBookItemOut,
     WrongBookPracticeIn,
     WrongBookPracticeOut,
 )
 from app.services.wrong_book import WrongBookService
+from app.services.wrong_book_explain import WrongBookExplainService
 from app.services.wrong_book_mastery import WrongBookMasteryService
 
 router = APIRouter(prefix="/student/wrong-book", tags=["student-wrong-book"])
@@ -55,6 +58,25 @@ def practice_wrong_item(
         status=result.status,
         consecutive_correct_count=result.consecutive_correct_count,
         mastered=result.mastered,
+    )
+
+
+@router.post("/{item_id}/explain", response_model=WrongBookExplainOut)
+def explain_wrong_item(
+    item_id: uuid.UUID,
+    payload: WrongBookExplainIn,
+    db: Session = Depends(get_db),
+    student: User = Depends(require_roles(UserRole.student)),
+) -> WrongBookExplainOut:
+    item = WrongBookService.get_item(db, student.id, item_id)
+    result = WrongBookExplainService().explain(
+        db, item=item, student_user_id=student.id, regenerate=payload.regenerate
+    )
+    db.commit()
+    return WrongBookExplainOut(
+        explanation_text=result.explanation_text,
+        from_cache=result.from_cache,
+        explanation_created_at=result.explanation_created_at,
     )
 
 
