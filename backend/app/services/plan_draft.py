@@ -310,8 +310,8 @@ class PlanDraftService:
                 continue
             focus = str(block.get("focus") or "").strip()
             notes = str(block.get("notes") or "").strip()
-            leaf_names: list[str] = []
             ids = block.get("syllabus_node_ids") or []
+            leaf_names: list[str] = []
             if ids and db is not None:
                 from app.services.roadmap_resolve import resolve_syllabus_nodes
 
@@ -330,6 +330,18 @@ class PlanDraftService:
                     "notes": primary,
                 }
             ]
+            if ids:
+                id_strs = [str(x) for x in ids]
+                name_bit = "、".join(leaf_names[:4]) if leaf_names else focus or "本周节点"
+                weekly_goals.append(
+                    {
+                        "kind": "focus",
+                        "subject_code": code,
+                        "syllabus_node_ids": id_strs,
+                        "title": f"本周：{label} — {name_bit}",
+                        "description": notes or (f"本月重点：{focus}" if focus else "推进当月路线图叶子节点"),
+                    }
+                )
         return PlanDraft(
             weekly_goals_json=weekly_goals,
             daily_time_budget_json=daily_budget,

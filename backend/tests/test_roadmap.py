@@ -43,6 +43,38 @@ def test_apply_month_slice_appends_leaf_names(db_session):
     assert name in notes or "本月叶子" in notes
 
 
+def test_apply_month_slice_emits_focus_weekly_goals_with_node_ids(db_session):
+    student = _seed_student(db_session)
+    draft_rm = RoadmapDraftService().draft(db_session, student_user_id=student.id)
+    month0 = draft_rm.months_json["months"][0]
+    code, block = next(iter(month0["subjects"].items()))
+    ids = list(block["syllabus_node_ids"])
+    assert ids
+    base = PlanDraft(
+        weekly_goals_json=[{"title": "旧目标", "description": "仅文案"}],
+        daily_time_budget_json=[],
+        subject_phases_json={},
+    )
+    slice_ = MonthSlice(
+        month=month0["month"],
+        label=month0["label"],
+        subjects={code: block},
+        milestones=[],
+    )
+    out = PlanDraftService()._apply_month_slice(base, slice_, date.today(), db=db_session)
+    focus = [
+        g
+        for g in out.weekly_goals_json
+        if g.get("kind") == "focus" and g.get("subject_code") == code
+    ]
+    assert len(focus) == 1
+    assert focus[0]["syllabus_node_ids"] == [str(x) for x in ids] or set(focus[0]["syllabus_node_ids"]) == {
+        str(x) for x in ids
+    }
+    assert focus[0]["title"]
+    assert any(g.get("title", "").startswith("本月：") for g in out.weekly_goals_json)
+
+
 def test_roadmap_draft_rule_uses_leaf_ids(db_session):
     student = _seed_student(db_session)
     draft = RoadmapDraftService().draft(db_session, student_user_id=student.id)
