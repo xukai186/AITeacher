@@ -78,14 +78,15 @@ export default function Workspace() {
     queryFn: listPlacementPapers,
   });
 
-  const paperGen = usePaperGenProgress();
+  const placementGen = usePaperGenProgress();
+  const selfTestGen = usePaperGenProgress();
 
   const start = useMutation({
     mutationFn: async () => {
       if (!current) throw new Error("请先选择科目");
       const out = await startPlacement({ subject_code: current });
       if (out.gen_job_id) {
-        await paperGen.run(out.gen_job_id);
+        await placementGen.run(out.gen_job_id);
       }
       return out;
     },
@@ -104,7 +105,7 @@ export default function Workspace() {
     mutationFn: async () => {
       const paper = await generateSelfTest({ subject_code: selfTestSubject });
       if (paper.gen_job_id) {
-        await paperGen.run(paper.gen_job_id);
+        await selfTestGen.run(paper.gen_job_id);
       }
       return paper;
     },
@@ -121,7 +122,8 @@ export default function Workspace() {
   if (!data) return null;
 
   const current = activeSubject ?? data.subject_codes[0] ?? null;
-  const paperGenBusy = start.isPending || genSelfTest.isPending || paperGen.running;
+  const placementBusy = start.isPending || placementGen.running;
+  const selfTestBusy = genSelfTest.isPending || selfTestGen.running;
   const currentPlacementStatus = (placements.data ?? []).find(
     (p) => p.subject_code === current,
   )?.status;
@@ -200,10 +202,10 @@ export default function Workspace() {
           </div>
           <button
             className="px-3 py-1 rounded text-sm bg-slate-900 text-white disabled:bg-slate-200 disabled:text-slate-500"
-            disabled={paperGenBusy || !current || profileIncomplete || placementDone}
+            disabled={placementBusy || !current || profileIncomplete || placementDone}
             onClick={() => start.mutate()}
           >
-            {paperGenBusy
+            {placementBusy
               ? "生成题目中…"
               : placementDone
                 ? "已完成"
@@ -215,22 +217,22 @@ export default function Workspace() {
             请等待老师完善报考档案
           </div>
         )}
-        {paperGenBusy && (
+        {placementBusy && (
           <div className="text-sm text-slate-600 space-y-2">
-            <p>{paperGen.message ?? "AI 正在生成题目，请勿重复点击。"}</p>
-            {paperGen.progressPct !== null && (
+            <p>{placementGen.message ?? "AI 正在生成摸底题目，请勿重复点击。"}</p>
+            {placementGen.progressPct !== null && (
               <div className="h-2 bg-slate-100 rounded overflow-hidden">
                 <div
                   className="h-full bg-slate-900 transition-all duration-500"
-                  style={{ width: `${paperGen.progressPct}%` }}
+                  style={{ width: `${placementGen.progressPct}%` }}
                 />
               </div>
             )}
           </div>
         )}
-        {(start.error || paperGen.error) && (
+        {(start.error || placementGen.error) && (
           <p className="text-sm text-red-600">
-            {((start.error || paperGen.error) as Error).message}
+            {((start.error || placementGen.error) as Error).message}
           </p>
         )}
 
@@ -272,10 +274,10 @@ export default function Workspace() {
                 </button>
                 <button
                   className="px-3 py-1 rounded text-sm bg-slate-900 text-white disabled:bg-slate-200 disabled:text-slate-500"
-                  disabled={!selfTestSubject || paperGenBusy}
+                  disabled={!selfTestSubject || selfTestBusy}
                   onClick={() => genSelfTest.mutate()}
                 >
-                  {paperGenBusy ? "生成中…" : "生成并开始"}
+                  {selfTestBusy ? "生成中…" : "生成并开始"}
                 </button>
               </div>
             </div>
