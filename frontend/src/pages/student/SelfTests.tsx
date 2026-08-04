@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
+import { ApiError } from "@/api/client";
 import { fetchStudentMe } from "@/api/me";
 import { generateSelfTest, listSelfTests } from "@/api/selfTests";
 
@@ -22,8 +23,17 @@ export default function SelfTests() {
 
   const gen = useMutation({
     mutationFn: async () => generateSelfTest({ subject_code: subject }),
-    onSuccess: (p) => navigate(`/student/self-tests/${p.id}`),
+    onSuccess: (p) => {
+      setOpen(false);
+      navigate(`/student/self-tests/${p.id}`);
+    },
   });
+  const genError =
+    gen.error instanceof ApiError
+      ? gen.error
+      : gen.error
+        ? new ApiError(500, (gen.error as Error).message)
+        : null;
 
   if (me.isLoading || papers.isLoading) return <p className="text-slate-500">加载中…</p>;
   if (me.error) return <p className="text-red-600">{(me.error as Error).message}</p>;
@@ -38,6 +48,7 @@ export default function SelfTests() {
           disabled={subjectOptions.length === 0}
           onClick={() => {
             setSubject(subjectOptions[0] ?? "");
+            gen.reset();
             setOpen(true);
           }}
         >
@@ -52,7 +63,10 @@ export default function SelfTests() {
             <select
               className="w-full border rounded px-3 py-2 text-sm"
               value={subject}
-              onChange={(e) => setSubject(e.target.value)}
+              onChange={(e) => {
+                gen.reset();
+                setSubject(e.target.value);
+              }}
             >
               {subjectOptions.map((code) => (
                 <option key={code} value={code}>
@@ -60,10 +74,30 @@ export default function SelfTests() {
                 </option>
               ))}
             </select>
+            {genError ? (
+              <div className="rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 space-y-2">
+                <p>{genError.reasonText}</p>
+                {genError.openPaperId ? (
+                  <button
+                    type="button"
+                    className="underline text-red-800"
+                    onClick={() => {
+                      setOpen(false);
+                      navigate(`/student/self-tests/${genError.openPaperId}`);
+                    }}
+                  >
+                    打开未完成的自测
+                  </button>
+                ) : null}
+              </div>
+            ) : null}
             <div className="flex justify-end gap-2">
               <button
                 className="px-3 py-1 rounded border text-sm bg-white text-slate-700 border-slate-300"
-                onClick={() => setOpen(false)}
+                onClick={() => {
+                  gen.reset();
+                  setOpen(false);
+                }}
               >
                 取消
               </button>
@@ -72,7 +106,7 @@ export default function SelfTests() {
                 disabled={!subject || gen.isPending}
                 onClick={() => gen.mutate()}
               >
-                生成并开始
+                {gen.isPending ? "生成中…" : "生成并开始"}
               </button>
             </div>
           </div>
@@ -104,4 +138,3 @@ export default function SelfTests() {
     </div>
   );
 }
-

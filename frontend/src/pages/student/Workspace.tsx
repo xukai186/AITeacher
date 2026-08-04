@@ -4,6 +4,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { fetchStudentMe } from "@/api/me";
 import { startPlacement, listPlacementPapers } from "@/api/placement";
 import { fetchTodayTasks } from "@/api/tasks";
+import { ApiError } from "@/api/client";
 import { generateSelfTest } from "@/api/selfTests";
 import { getStudentExamProfile } from "@/api/examProfile";
 import { fetchRoadmap } from "@/api/roadmap";
@@ -108,6 +109,12 @@ export default function Workspace() {
       navigate(`/student/self-tests/${p.id}`);
     },
   });
+  const selfTestError =
+    genSelfTest.error instanceof ApiError
+      ? genSelfTest.error
+      : genSelfTest.error
+        ? new ApiError(500, (genSelfTest.error as Error).message)
+        : null;
 
   const [activeSubject, setActiveSubject] = useState<string | null>(null);
 
@@ -237,6 +244,7 @@ export default function Workspace() {
             disabled={data.subject_codes.length === 0}
             onClick={() => {
               setSelfTestSubject(data.subject_codes[0] ?? "");
+              genSelfTest.reset();
               setSelfTestOpen(true);
             }}
           >
@@ -251,7 +259,10 @@ export default function Workspace() {
               <select
                 className="w-full border rounded px-3 py-2 text-sm"
                 value={selfTestSubject}
-                onChange={(e) => setSelfTestSubject(e.target.value)}
+                onChange={(e) => {
+                  genSelfTest.reset();
+                  setSelfTestSubject(e.target.value);
+                }}
               >
                 {data.subject_codes.map((code) => (
                   <option key={code} value={code}>
@@ -259,10 +270,30 @@ export default function Workspace() {
                   </option>
                 ))}
               </select>
+              {selfTestError ? (
+                <div className="rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 space-y-2">
+                  <p>{selfTestError.reasonText}</p>
+                  {selfTestError.openPaperId ? (
+                    <button
+                      type="button"
+                      className="underline text-red-800"
+                      onClick={() => {
+                        setSelfTestOpen(false);
+                        navigate(`/student/self-tests/${selfTestError.openPaperId}`);
+                      }}
+                    >
+                      打开未完成的自测
+                    </button>
+                  ) : null}
+                </div>
+              ) : null}
               <div className="flex justify-end gap-2">
                 <button
                   className="px-3 py-1 rounded border text-sm bg-white text-slate-700 border-slate-300"
-                  onClick={() => setSelfTestOpen(false)}
+                  onClick={() => {
+                    genSelfTest.reset();
+                    setSelfTestOpen(false);
+                  }}
                 >
                   取消
                 </button>

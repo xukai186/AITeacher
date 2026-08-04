@@ -17,6 +17,7 @@ MAX_SELF_TESTS_PER_WEEK = 2
 class SelfTestEligibility:
     allowed: bool
     reasons: list[str] = field(default_factory=list)
+    open_paper_id: uuid.UUID | None = None
 
 
 class SelfTestEligibilityService:
@@ -32,6 +33,7 @@ class SelfTestEligibilityService:
     ) -> SelfTestEligibility:
         today = as_of or date.today()
         reasons: list[str] = []
+        open_paper_id: uuid.UUID | None = None
 
         locked = db.execute(
             select(SelfTestPaper.id).where(
@@ -50,12 +52,15 @@ class SelfTestEligibilityService:
             select(SelfTestPaper.id).where(
                 SelfTestPaper.student_user_id == student_user_id,
                 SelfTestPaper.subject_code == subject_code,
-                SelfTestPaper.status == "ready",
+                SelfTestPaper.status.in_(("ready", "generating")),
                 SelfTestPaper.id.not_in(submitted_ids),
             )
+            .order_by(SelfTestPaper.created_at.desc())
+            .limit(1)
         ).first()
         if in_progress is not None:
-            reasons.append("存在未提交的自测卷，请先完成或放弃后再生成")
+            open_paper_id = in_progress[0]
+            reasons.append("存在未完成的自测卷，请先完成或打开继续作答")
 
         week_start = today - timedelta(days=today.weekday())
         week_end = week_start + timedelta(days=7)
@@ -98,4 +103,8 @@ class SelfTestEligibilityService:
                     f"距上次自测仅 {days_since} 天，需间隔至少 {MIN_DAYS_SINCE_LAST_GRADED} 天"
                 )
 
-        return SelfTestEligibility(allowed=len(reasons) == 0, reasons=reasons)
+        return SelfTestEligibility(
+            allowed=len(reasons) == 0,
+            reasons=reasons,
+            open_paper_id=open_paper_id,
+        )

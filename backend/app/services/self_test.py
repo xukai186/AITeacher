@@ -72,10 +72,13 @@ class SelfTestService:
                 db, student_user_id=student_user_id, subject_code=subject_code
             )
             if not eligibility.allowed:
-                raise HTTPException(
-                    status.HTTP_400_BAD_REQUEST,
-                    detail={"code": "self_test_not_eligible", "reasons": eligibility.reasons},
-                )
+                detail: dict = {
+                    "code": "self_test_not_eligible",
+                    "reasons": eligibility.reasons,
+                }
+                if eligibility.open_paper_id is not None:
+                    detail["open_paper_id"] = str(eligibility.open_paper_id)
+                raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=detail)
 
         enabled = db.execute(
             select(StudentSubject.id).where(

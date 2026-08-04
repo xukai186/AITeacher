@@ -40,7 +40,21 @@ def test_blocks_when_ready_paper_in_progress(db_session):
         db_session, student_user_id=student.id, subject_code="english"
     )
     assert result.allowed is False
-    assert any("未提交" in r for r in result.reasons)
+    assert any("未完成" in r for r in result.reasons)
+    assert result.open_paper_id == paper.id
+
+
+def test_blocks_when_generating_paper_in_progress(db_session):
+    student = _student(db_session)
+    paper, _ = SelfTestService.generate(db_session, student.id, "english")
+    db_session.commit()
+    assert paper.status == "generating"
+    result = SelfTestEligibilityService().check(
+        db_session, student_user_id=student.id, subject_code="english"
+    )
+    assert result.allowed is False
+    assert result.open_paper_id == paper.id
+    assert any("未完成" in r for r in result.reasons)
 
 
 def test_blocks_within_five_days_of_last_graded(db_session):
