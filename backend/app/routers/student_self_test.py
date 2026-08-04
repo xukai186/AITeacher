@@ -54,6 +54,7 @@ def list_self_tests(
 @router.get("/{paper_id}", response_model=SelfTestPaperDetailOut)
 def get_self_test(
     paper_id: uuid.UUID,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     student: User = Depends(require_roles(UserRole.student)),
 ) -> SelfTestPaperDetailOut:
@@ -69,13 +70,15 @@ def get_self_test(
     )
     gen_job_id = None
     if paper.status == "generating":
-        from app.services.paper_gen_jobs import PaperGenJobService
+        from app.services.paper_gen_jobs import PaperGenJobService, should_kick_paper_gen_job
 
         active = PaperGenJobService().get_active_for_paper(
             db, paper_id=paper.id, purpose="self_test"
         )
         if active is not None:
             gen_job_id = active.id
+            if should_kick_paper_gen_job(active):
+                background_tasks.add_task(kick_paper_gen_job, active.id)
     return SelfTestPaperDetailOut(
         id=paper.id,
         subject_code=paper.subject_code,

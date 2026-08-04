@@ -43,6 +43,9 @@ export function useWaitForPaperGeneration(
             await queryClient.invalidateQueries({
               queryKey: ["student", "placement", "paper", paperId],
             });
+            await queryClient.invalidateQueries({
+              queryKey: ["student", "self_tests", "paper", paperId],
+            });
           }
         }
       } catch {

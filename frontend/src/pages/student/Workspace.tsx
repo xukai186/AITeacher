@@ -79,7 +79,6 @@ export default function Workspace() {
   });
 
   const placementGen = usePaperGenProgress();
-  const selfTestGen = usePaperGenProgress();
 
   const start = useMutation({
     mutationFn: async () => {
@@ -102,15 +101,10 @@ export default function Workspace() {
   const [selfTestOpen, setSelfTestOpen] = useState(false);
   const [selfTestSubject, setSelfTestSubject] = useState<string>("");
   const genSelfTest = useMutation({
-    mutationFn: async () => {
-      const paper = await generateSelfTest({ subject_code: selfTestSubject });
-      if (paper.gen_job_id) {
-        await selfTestGen.run(paper.gen_job_id);
-      }
-      return paper;
-    },
+    mutationFn: async () => generateSelfTest({ subject_code: selfTestSubject }),
     onSuccess: (p) => {
       setSelfTestOpen(false);
+      // Navigate immediately; SelfTestPaper waits on generating status.
       navigate(`/student/self-tests/${p.id}`);
     },
   });
@@ -123,7 +117,7 @@ export default function Workspace() {
 
   const current = activeSubject ?? data.subject_codes[0] ?? null;
   const placementBusy = start.isPending || placementGen.running;
-  const selfTestBusy = genSelfTest.isPending || selfTestGen.running;
+  const selfTestBusy = genSelfTest.isPending;
   const currentPlacementStatus = (placements.data ?? []).find(
     (p) => p.subject_code === current,
   )?.status;
