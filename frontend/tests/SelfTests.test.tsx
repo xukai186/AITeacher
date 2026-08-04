@@ -70,5 +70,50 @@ describe("SelfTests page", () => {
 
     await waitFor(() => expect(screen.getByText("paper")).toBeTruthy());
   });
+
+  it("shows eligibility error and opens unfinished paper", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: any) => {
+        const url = String(input);
+        if (url.includes("/api/student/me")) {
+          return new Response(
+            JSON.stringify({
+              id: "u1",
+              email: "s@example.com",
+              name: "s",
+              exam_year: 2027,
+              subject_codes: ["english"],
+            }),
+            { status: 200 },
+          );
+        }
+        if (url.includes("/api/student/self-tests") && !url.includes("/generate")) {
+          return new Response(JSON.stringify([]), { status: 200 });
+        }
+        if (url.includes("/api/student/self-tests/generate")) {
+          return new Response(
+            JSON.stringify({
+              detail: {
+                code: "self_test_not_eligible",
+                reasons: ["存在未完成的自测卷，请先完成或打开继续作答"],
+                open_paper_id: "open-p1",
+              },
+            }),
+            { status: 400 },
+          );
+        }
+        return new Response(JSON.stringify({ detail: "not found" }), { status: 404 });
+      }),
+    );
+    renderPage();
+
+    fireEvent.click(await screen.findByRole("button", { name: "生成自测" }));
+    fireEvent.click(screen.getByRole("button", { name: "生成并开始" }));
+
+    expect(await screen.findByText(/存在未完成的自测卷/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "打开未完成的自测" }));
+    await waitFor(() => expect(screen.getByText("paper")).toBeTruthy());
+  });
 });
 
