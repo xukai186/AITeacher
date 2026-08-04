@@ -11,6 +11,7 @@ from app.routers import (
     chat as chat_router,
     exam_majors,
     me as me_router,
+    org_question_bank,
     org_students,
     staff_exam_profile,
     staff_students,
@@ -47,6 +48,7 @@ app.include_router(admin_model_policy.router)
 app.include_router(staff_students.router)
 app.include_router(staff_exam_profile.router)
 app.include_router(org_students.router)
+app.include_router(org_question_bank.router)
 app.include_router(student_profile.router)
 app.include_router(student_exam_profile.router)
 app.include_router(student_placement.router)
