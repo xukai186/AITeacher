@@ -21,6 +21,7 @@ from app.services.placement_paper_context import (
     resolve_placement_question_count,
 )
 from app.services.report import ReportQuery, ReportService
+from app.services.self_test_assembler import SelfTestAssembler
 
 ProgressCallback = Callable[[int, int, str], None]
 
@@ -355,7 +356,9 @@ class PaperGenJobRunner:
                 subject_code=job.subject_code,
             )
             db.commit()
-            generated = self._paper_gen.generate_prepared_self_test(
+            generated = SelfTestAssembler().assemble(
+                db,
+                org_id=student.org_id,
                 provider=provider,
                 model=model,
                 params=params,
@@ -384,6 +387,8 @@ class PaperGenJobRunner:
                         answer_key=q.answer_key,
                         points=q.points,
                         rubric_json=None,
+                        bank_item_id=q.bank_item_id,
+                        selection_source=q.selection_source,
                     )
                 )
             paper.status = "ready"
@@ -568,6 +573,7 @@ class PaperGenJobRunner:
                 )
                 prep_db.commit()
                 paper_id = paper.id
+                org_id = student.org_id
                 student_user_id = job.student_user_id
                 subject_code = job.subject_code
                 question_count = total
@@ -588,18 +594,25 @@ class PaperGenJobRunner:
                 on_progress=on_progress,
             )
         else:
-            generated = self._paper_gen.generate_prepared_self_test(
-                provider=provider,
-                model=model,
-                params=params,
-                target_nodes=target_nodes,
-                student_user_id=student_user_id,
-                subject_code=subject_code,
-                question_count=question_count,
-                english_track=english_track,
-                math_track=math_track,
-                on_progress=on_progress,
-            )
+            assembly_db = SessionLocal()
+            try:
+                generated = SelfTestAssembler().assemble(
+                    assembly_db,
+                    org_id=org_id,
+                    provider=provider,
+                    model=model,
+                    params=params,
+                    target_nodes=target_nodes,
+                    student_user_id=student_user_id,
+                    subject_code=subject_code,
+                    question_count=question_count,
+                    english_track=english_track,
+                    math_track=math_track,
+                    on_progress=on_progress,
+                )
+                assembly_db.commit()
+            finally:
+                assembly_db.close()
 
         if not generated:
             raise ValueError("Failed to generate questions")
@@ -641,6 +654,8 @@ class PaperGenJobRunner:
                             answer_key=q.answer_key,
                             points=q.points,
                             rubric_json=None,
+                            bank_item_id=q.bank_item_id,
+                            selection_source=q.selection_source,
                         )
                     )
                 paper.status = "ready"
