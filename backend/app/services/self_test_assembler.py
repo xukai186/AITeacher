@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from dataclasses import dataclass
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from app.models import (
@@ -216,6 +216,16 @@ class SelfTestAssembler:
         if count <= 0:
             return []
 
+        weak_ids = self._weak_node_ids(
+            db,
+            student_user_id=student_user_id,
+            subject_code=subject_code,
+        )
+        focus_ids = self._weekly_focus_node_ids(
+            db,
+            student_user_id=student_user_id,
+            subject_code=subject_code,
+        )
         submitted_ids = set(
             db.execute(
                 select(SelfTestQuestion.bank_item_id)
@@ -235,47 +245,77 @@ class SelfTestAssembler:
         )
         excluded_ids = submitted_ids | set(exclude_bank_ids or ())
         selected: list[AssembledQuestion] = []
+        selected_ids: set[uuid.UUID] = set()
 
-        for scope, source in (("org", "bank_org"), ("global", "bank_global")):
-            remaining = count - len(selected)
-            if remaining <= 0:
-                break
+        layers: tuple[set[uuid.UUID] | None, ...] = (
+            weak_ids,
+            focus_ids,
+            None,
+        )
+        for layer_ids in layers:
+            if layer_ids is not None and not layer_ids:
+                continue
 
-            conditions = [
-                QuestionBankItem.scope == scope,
-                QuestionBankItem.subject_code == subject_code,
-                QuestionBankItem.status == "active",
-            ]
-            if scope == "org":
-                conditions.append(QuestionBankItem.org_id == org_id)
+            for scope, source in (("org", "bank_org"), ("global", "bank_global")):
+                remaining = count - len(selected)
+                if remaining <= 0:
+                    break
 
-            statement = (
-                select(QuestionBankItem)
-                .where(*conditions)
-                .order_by(
-                    QuestionBankItem.created_at.asc(),
-                    QuestionBankItem.id.asc(),
-                )
-                .limit(remaining)
-            )
-            if excluded_ids:
-                statement = statement.where(
-                    QuestionBankItem.id.not_in(excluded_ids)
-                )
-
-            for item in db.execute(statement).scalars():
-                selected.append(
-                    AssembledQuestion(
-                        bank_item_id=item.id,
-                        selection_source=source,
-                        knowledge_node_id=item.knowledge_node_id,
-                        q_type=item.q_type,
-                        stem=item.stem,
-                        choices_json=item.choices_json,
-                        answer_key=item.answer_key,
-                        points=1,
-                        seq=len(selected) + 1,
+                conditions = [
+                    QuestionBankItem.scope == scope,
+                    QuestionBankItem.subject_code == subject_code,
+                    QuestionBankItem.status == "active",
+                ]
+                if scope == "org":
+                    conditions.append(QuestionBankItem.org_id == org_id)
+                if layer_ids is not None:
+                    conditions.append(
+                        QuestionBankItem.knowledge_node_id.in_(layer_ids)
                     )
+                else:
+                    reserved_ids = weak_ids | focus_ids
+                    if reserved_ids:
+                        conditions.append(
+                            or_(
+                                QuestionBankItem.knowledge_node_id.is_(None),
+                                QuestionBankItem.knowledge_node_id.not_in(
+                                    reserved_ids
+                                ),
+                            )
+                        )
+
+                statement = (
+                    select(QuestionBankItem)
+                    .where(*conditions)
+                    .order_by(
+                        QuestionBankItem.created_at.asc(),
+                        QuestionBankItem.id.asc(),
+                    )
+                    .limit(remaining)
                 )
+                blocked_ids = excluded_ids | selected_ids
+                if blocked_ids:
+                    statement = statement.where(
+                        QuestionBankItem.id.not_in(blocked_ids)
+                    )
+
+                for item in db.execute(statement).scalars():
+                    selected_ids.add(item.id)
+                    selected.append(
+                        AssembledQuestion(
+                            bank_item_id=item.id,
+                            selection_source=source,
+                            knowledge_node_id=item.knowledge_node_id,
+                            q_type=item.q_type,
+                            stem=item.stem,
+                            choices_json=item.choices_json,
+                            answer_key=item.answer_key,
+                            points=1,
+                            seq=len(selected) + 1,
+                        )
+                    )
+
+            if len(selected) >= count:
+                break
 
         return selected

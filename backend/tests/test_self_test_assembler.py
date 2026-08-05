@@ -1,4 +1,5 @@
 import uuid
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import select
 
@@ -18,12 +19,23 @@ from app.services.self_test_assembler import SelfTestAssembler
 from tests.factories import make_org, make_user
 
 
-def _bank_item(db, *, creator, scope, org_id, stem, subject_code="english", status="active"):
+def _bank_item(
+    db,
+    *,
+    creator,
+    scope,
+    org_id,
+    stem,
+    subject_code="english",
+    status="active",
+    knowledge_node_id=None,
+    created_at=None,
+):
     item = QuestionBankItem(
         scope=scope,
         org_id=org_id,
         subject_code=subject_code,
-        knowledge_node_id=None,
+        knowledge_node_id=knowledge_node_id,
         q_type="single_choice",
         stem=stem,
         choices_json=[{"key": "A", "text": "answer"}],
@@ -33,6 +45,7 @@ def _bank_item(db, *, creator, scope, org_id, stem, subject_code="english", stat
         source_type="admin_manual",
         status=status,
         created_by=creator.id,
+        created_at=created_at or datetime.now(UTC),
     )
     db.add(item)
     db.flush()
@@ -138,6 +151,139 @@ def test_weekly_focus_ignores_other_subject(db_session):
     )
 
     assert math_id not in ids
+
+
+def test_select_prefers_weak_then_focus_then_other(db_session):
+    org, admin, student = _people(db_session)
+    weak_node = _english_leaf(db_session)
+    focus_node = _english_leaf(db_session)
+    other_node = _english_leaf(db_session)
+    _wrong_book_item(db_session, student.id, weak_node.id)
+    _seed_master_with_focus(db_session, student.id, "english", [focus_node.id])
+    now = datetime.now(UTC)
+
+    other_item = _bank_item(
+        db_session,
+        creator=admin,
+        scope="org",
+        org_id=org.id,
+        stem="Other",
+        knowledge_node_id=other_node.id,
+        created_at=now - timedelta(minutes=2),
+    )
+    null_item = _bank_item(
+        db_session,
+        creator=admin,
+        scope="org",
+        org_id=org.id,
+        stem="Null",
+        created_at=now - timedelta(minutes=1),
+    )
+    weak_item = _bank_item(
+        db_session,
+        creator=admin,
+        scope="org",
+        org_id=org.id,
+        stem="Weak",
+        knowledge_node_id=weak_node.id,
+    )
+    focus_item = _bank_item(
+        db_session,
+        creator=admin,
+        scope="org",
+        org_id=org.id,
+        stem="Focus",
+        knowledge_node_id=focus_node.id,
+    )
+    db_session.commit()
+
+    picked = SelfTestAssembler().select_from_bank(
+        db_session,
+        org_id=org.id,
+        student_user_id=student.id,
+        subject_code="english",
+        count=3,
+    )
+
+    assert [question.bank_item_id for question in picked] == [
+        weak_item.id,
+        focus_item.id,
+        other_item.id,
+    ]
+    assert null_item.id not in {question.bank_item_id for question in picked}
+
+
+def test_null_node_only_in_l3_when_weak_fills(db_session):
+    org, admin, student = _people(db_session)
+    weak_node = _english_leaf(db_session)
+    _wrong_book_item(db_session, student.id, weak_node.id)
+    null_item = _bank_item(
+        db_session,
+        creator=admin,
+        scope="org",
+        org_id=org.id,
+        stem="Null",
+    )
+    weak_items = [
+        _bank_item(
+            db_session,
+            creator=admin,
+            scope="org",
+            org_id=org.id,
+            stem=f"Weak {index}",
+            knowledge_node_id=weak_node.id,
+        )
+        for index in range(2)
+    ]
+    db_session.commit()
+
+    picked = SelfTestAssembler().select_from_bank(
+        db_session,
+        org_id=org.id,
+        student_user_id=student.id,
+        subject_code="english",
+        count=2,
+    )
+
+    assert {question.bank_item_id for question in picked} == {
+        item.id for item in weak_items
+    }
+    assert null_item.id not in {question.bank_item_id for question in picked}
+
+
+def test_org_before_global_within_weak_layer(db_session):
+    org, admin, student = _people(db_session)
+    weak_node = _english_leaf(db_session)
+    _wrong_book_item(db_session, student.id, weak_node.id)
+    global_item = _bank_item(
+        db_session,
+        creator=admin,
+        scope="global",
+        org_id=None,
+        stem="Global weak",
+        knowledge_node_id=weak_node.id,
+    )
+    org_item = _bank_item(
+        db_session,
+        creator=admin,
+        scope="org",
+        org_id=org.id,
+        stem="Org weak",
+        knowledge_node_id=weak_node.id,
+    )
+    db_session.commit()
+
+    picked = SelfTestAssembler().select_from_bank(
+        db_session,
+        org_id=org.id,
+        student_user_id=student.id,
+        subject_code="english",
+        count=1,
+    )
+
+    assert picked[0].bank_item_id == org_item.id
+    assert picked[0].bank_item_id != global_item.id
+    assert picked[0].selection_source == "bank_org"
 
 
 def test_selects_active_org_items_before_active_global_items(db_session):
