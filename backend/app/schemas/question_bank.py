@@ -59,6 +59,22 @@ class QuestionEnrichmentOut(BaseModel):
     q_type: str | None
 
 
+class MediaAssetOut(BaseModel):
+    asset_id: uuid.UUID
+    url_or_path: str
+
+
+class QuestionOCRRequest(BaseModel):
+    asset_id: uuid.UUID
+
+
+class QuestionOCROut(BaseModel):
+    q_type: str
+    stem: str
+    choices: list[dict] | None
+    answer_key: str | None
+
+
 class QuestionBankItemOut(BaseModel):
     id: uuid.UUID
     scope: str

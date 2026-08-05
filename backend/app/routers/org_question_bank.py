@@ -2,24 +2,79 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
 from sqlalchemy.orm import Session
 
 from app.auth.permissions import require_roles
 from app.database import get_db
 from app.models import QuestionBankItem, User, UserRole
 from app.schemas.question_bank import (
+    MediaAssetOut,
     QuestionBankCreate,
     QuestionBankCreateRequest,
     QuestionBankItemOut,
     QuestionEnrichmentOut,
     QuestionEnrichmentRequest,
+    QuestionOCROut,
+    QuestionOCRRequest,
 )
+from app.services.media_assets import MediaAssetService
 from app.services.question_bank import QuestionBankService
 from app.services.question_enrichment import QuestionEnrichmentService
+from app.services.question_ocr import QuestionOCRService
 
 router = APIRouter(prefix="/org/question-bank", tags=["org-question-bank"])
 staff_or_admin = require_roles(UserRole.org_admin, UserRole.org_staff)
+
+
+@router.post("/upload-image", response_model=MediaAssetOut, status_code=status.HTTP_201_CREATED)
+def upload_image(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    actor: User = Depends(staff_or_admin),
+) -> MediaAssetOut:
+    try:
+        asset = MediaAssetService().store(
+            db,
+            org_id=actor.org_id,
+            created_by=actor.id,
+            content_type=file.content_type or "application/octet-stream",
+            source=file.file,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE, detail=str(exc)) from exc
+    db.commit()
+    db.refresh(asset)
+    return MediaAssetOut(asset_id=asset.id, url_or_path=asset.storage_path)
+
+
+@router.post("/ocr", response_model=QuestionOCROut)
+def extract_question(
+    payload: QuestionOCRRequest,
+    db: Session = Depends(get_db),
+    actor: User = Depends(staff_or_admin),
+) -> QuestionOCROut:
+    try:
+        question = QuestionOCRService().extract(
+            db,
+            org_id=actor.org_id,
+            asset_id=payload.asset_id,
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=str(exc),
+        ) from exc
+    except (ValueError, OSError) as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="OCR extraction failed") from exc
+    return QuestionOCROut(
+        q_type=question.q_type,
+        stem=question.stem,
+        choices=question.choices,
+        answer_key=question.answer_key,
+    )
 
 
 def _item_out(item: QuestionBankItem) -> QuestionBankItemOut:
