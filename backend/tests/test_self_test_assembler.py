@@ -14,7 +14,11 @@ from app.models import (
     UserRole,
     WrongBookItem,
 )
-from app.services.paper_gen import GeneratedQuestion, PaperGenService
+from app.services.paper_gen import (
+    DEFAULT_QUESTION_COUNT,
+    GeneratedQuestion,
+    PaperGenService,
+)
 from app.services.self_test_assembler import SelfTestAssembler
 from tests.factories import make_org, make_user
 
@@ -473,6 +477,44 @@ def test_assemble_fills_empty_bank_with_pending_ai_question(
     assert assembled[0].bank_item_id == bank_item.id
     assert assembled[0].selection_source == "ai_fallback"
     assert assembled[0].seq == 1
+
+
+def test_assemble_uses_weak_bank_without_llm(db_session, monkeypatch):
+    org, admin, student = _people(db_session)
+    weak_node = _english_leaf(db_session)
+    _wrong_book_item(db_session, student.id, weak_node.id)
+    [
+        _bank_item(
+            db_session,
+            creator=admin,
+            scope="org",
+            org_id=org.id,
+            stem=f"Weak {index}",
+            knowledge_node_id=weak_node.id,
+        )
+        for index in range(DEFAULT_QUESTION_COUNT)
+    ]
+    db_session.commit()
+
+    def boom(*_args, **_kwargs):
+        raise AssertionError("LLM should not be called")
+
+    monkeypatch.setattr(PaperGenService, "generate_prepared_self_test", boom)
+
+    assembled = SelfTestAssembler().assemble(
+        db_session,
+        org_id=org.id,
+        student_user_id=student.id,
+        subject_code="english",
+        question_count=DEFAULT_QUESTION_COUNT,
+        provider=None,
+        model=None,
+        params=None,
+        target_nodes=[],
+    )
+
+    assert len(assembled) == DEFAULT_QUESTION_COUNT
+    assert all(question.selection_source == "bank_org" for question in assembled)
 
 
 def test_assemble_replaces_inactive_exact_duplicate(db_session, monkeypatch):

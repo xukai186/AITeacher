@@ -1,7 +1,7 @@
 # 自测题库选题：薄弱点 + 本周知识点 — 产品设计规格
 
 **日期：** 2026-08-05  
-**状态：** 待实现  
+**状态：** 已实现  
 **依赖：** 全局题库 `2026-08-04-global-question-bank-design.md`（`SelfTestAssembler`、`QuestionBankItem.knowledge_node_id`）、`ReportService.overview.weak_nodes`、总计划 `MasterPlanVersion.weekly_goals_json`（`kind=focus` + `syllabus_node_ids`）
 
 ---
