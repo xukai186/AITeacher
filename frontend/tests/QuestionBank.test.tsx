@@ -98,4 +98,82 @@ describe("Question bank", () => {
       source_type: "staff_manual",
     });
   });
+
+  it("sends multi_choice with choice keys on create", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith("/org/question-bank/enrich")) {
+        return new Response(
+          JSON.stringify({
+            subject_code: "math",
+            knowledge_node_id: null,
+            difficulty: 2,
+            analysis_text: "选 A 和 C。",
+            q_type: "multi_choice",
+          }),
+          { status: 200 },
+        );
+      }
+      if (url.endsWith("/org/question-bank") && init?.method === "POST") {
+        return new Response(
+          JSON.stringify({
+            id: "q2",
+            stem: "下列哪些为偶数？",
+            subject_code: "math",
+            q_type: "multi_choice",
+            status: "active",
+          }),
+          { status: 201 },
+        );
+      }
+      if (url.includes("/org/question-bank")) {
+        return new Response(JSON.stringify([]), { status: 200 });
+      }
+      return new Response("not found", { status: 404 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderPage();
+    fireEvent.click(screen.getByRole("button", { name: "新建题目" }));
+    fireEvent.change(screen.getByLabelText("题型"), {
+      target: { value: "multi_choice" },
+    });
+    fireEvent.change(screen.getByLabelText("题干"), {
+      target: { value: "下列哪些为偶数？" },
+    });
+    fireEvent.change(screen.getByLabelText("选项（每行一个）"), {
+      target: { value: "A. 2\nB. 3\nC. 4" },
+    });
+    fireEvent.change(screen.getByLabelText("答案"), {
+      target: { value: "AC" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "智能补全" }));
+
+    await waitFor(() =>
+      expect(screen.getByRole("heading", { name: "确认题目信息" })).toBeTruthy(),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "确认入库" }));
+
+    await waitFor(() => {
+      const createCall = fetchMock.mock.calls.find(
+        ([url, init]) =>
+          String(url).endsWith("/org/question-bank") && init?.method === "POST",
+      );
+      expect(createCall).toBeTruthy();
+    });
+    const createCall = fetchMock.mock.calls.find(
+      ([url, init]) =>
+        String(url).endsWith("/org/question-bank") && init?.method === "POST",
+    );
+    expect(JSON.parse(String(createCall![1]?.body))).toMatchObject({
+      stem: "下列哪些为偶数？",
+      q_type: "multi_choice",
+      answer_key: "AC",
+      choices: [
+        { key: "A", text: "2" },
+        { key: "B", text: "3" },
+        { key: "C", text: "4" },
+      ],
+    });
+  });
 });

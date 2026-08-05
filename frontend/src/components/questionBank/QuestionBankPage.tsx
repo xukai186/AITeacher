@@ -27,7 +27,7 @@ const STATUSES = [
 
 const STATUS_LABELS: Record<string, string> = Object.fromEntries(STATUSES);
 const SUBJECT_LABELS: Record<string, string> = Object.fromEntries(SUBJECTS);
-const OBJECTIVE_TYPES = new Set(["single_choice", "multiple_choice"]);
+const OBJECTIVE_TYPES = new Set(["single_choice", "multi_choice"]);
 
 type Draft = {
   stem: string;
@@ -49,7 +49,7 @@ function parseChoices(value: string) {
     .map((line, index) => {
       const match = line.trim().match(/^([A-Za-z])[\s.、:：]+(.+)$/);
       return {
-        label: match?.[1]?.toUpperCase() ?? String.fromCharCode(65 + index),
+        key: match?.[1]?.toUpperCase() ?? String.fromCharCode(65 + index),
         text: match?.[2]?.trim() ?? line.trim(),
       };
     })
@@ -283,7 +283,7 @@ export default function QuestionBankPage({ role }: { role: QuestionBankRole }) {
                     <option value="short_answer">简答题</option>
                     <option value="fill_blank">填空题</option>
                     <option value="single_choice">单选题</option>
-                    <option value="multiple_choice">多选题</option>
+                    <option value="multi_choice">多选题</option>
                   </select>
                 </label>
                 <label className="block space-y-1">

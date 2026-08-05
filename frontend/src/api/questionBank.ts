@@ -11,7 +11,7 @@ export type QuestionBankItem = {
   knowledge_node_id: string | null;
   q_type: string;
   stem: string;
-  choices: Array<{ label?: string; text?: string; [key: string]: unknown }> | null;
+  choices: Array<{ key?: string; text?: string; [key: string]: unknown }> | null;
   answer_key: string | null;
   analysis_text: string | null;
   difficulty: number | null;
@@ -23,7 +23,7 @@ export type QuestionBankItem = {
 export type QuestionDraft = {
   stem: string;
   q_type: string;
-  choices?: Array<{ label: string; text: string }>;
+  choices?: Array<{ key: string; text: string }>;
   answer_key?: string;
 };
 
