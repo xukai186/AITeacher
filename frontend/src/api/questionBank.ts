@@ -37,7 +37,7 @@ export type Enrichment = {
 
 export type UploadedQuestionImage = {
   asset_id: string;
-  url_or_path: string;
+  storage_key: string;
 };
 
 export type RecognizedQuestion = QuestionDraft & {

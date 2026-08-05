@@ -18,7 +18,7 @@ from app.schemas.question_bank import (
     QuestionOCROut,
     QuestionOCRRequest,
 )
-from app.services.media_assets import MediaAssetService
+from app.services.media_assets import MediaAssetService, UploadTooLargeError
 from app.services.question_bank import QuestionBankService
 from app.services.question_enrichment import QuestionEnrichmentService
 from app.services.question_ocr import QuestionOCRService
@@ -41,11 +41,19 @@ def upload_image(
             content_type=file.content_type or "application/octet-stream",
             source=file.file,
         )
+    except UploadTooLargeError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_413_CONTENT_TOO_LARGE,
+            detail=str(exc),
+        ) from exc
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE, detail=str(exc)) from exc
     db.commit()
     db.refresh(asset)
-    return MediaAssetOut(asset_id=asset.id, url_or_path=asset.storage_path)
+    return MediaAssetOut(
+        asset_id=asset.id,
+        storage_key=f"{asset.org_id}/{asset.id}",
+    )
 
 
 @router.post("/ocr", response_model=QuestionOCROut)

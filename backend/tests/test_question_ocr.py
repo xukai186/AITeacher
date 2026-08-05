@@ -6,8 +6,11 @@ from sqlalchemy import select
 
 from app.auth.security import hash_password
 from app.models import MediaAsset, UserRole
+from app.services.media_assets import MAX_UPLOAD_BYTES
 from app.services.question_ocr import QuestionOCRService
 from tests.factories import make_org, make_user
+
+PNG_BYTES = b"\x89PNG\r\n\x1a\n" + b"test-image"
 
 
 def _staff_headers(client, db_session) -> tuple[dict[str, str], object]:
@@ -75,7 +78,7 @@ def test_staff_uploads_image_then_extracts_question(
 
     uploaded = client.post(
         "/org/question-bank/upload-image",
-        files={"file": ("question.png", b"image bytes", "image/png")},
+        files={"file": ("question.png", PNG_BYTES, "image/png")},
         headers=headers,
     )
 
@@ -85,8 +88,9 @@ def test_staff_uploads_image_then_extracts_question(
         select(MediaAsset).where(MediaAsset.id == body["asset_id"])
     ).scalar_one()
     assert asset.org_id == staff.org_id
-    assert Path(asset.storage_path).read_bytes() == b"image bytes"
-    assert body["url_or_path"] == asset.storage_path
+    assert Path(asset.storage_path).read_bytes() == PNG_BYTES
+    assert body["storage_key"] == f"{staff.org_id}/{asset.id}"
+    assert not Path(body["storage_key"]).is_absolute()
 
     extracted = client.post(
         "/org/question-bank/ocr",
@@ -100,3 +104,37 @@ def test_staff_uploads_image_then_extracts_question(
         "choices": None,
         "answer_key": "Because it follows.",
     }
+
+
+def test_upload_rejects_unsupported_spoofed_and_oversized_images(
+    client, db_session, monkeypatch, tmp_path
+):
+    headers, _staff = _staff_headers(client, db_session)
+    monkeypatch.setattr("app.services.media_assets.MEDIA_ROOT", tmp_path)
+
+    unsupported = client.post(
+        "/org/question-bank/upload-image",
+        files={"file": ("question.gif", b"GIF89a", "image/gif")},
+        headers=headers,
+    )
+    spoofed = client.post(
+        "/org/question-bank/upload-image",
+        files={"file": ("question.png", b"not a png", "image/png")},
+        headers=headers,
+    )
+    oversized = client.post(
+        "/org/question-bank/upload-image",
+        files={
+            "file": (
+                "question.png",
+                b"\x89PNG\r\n\x1a\n" + b"x" * MAX_UPLOAD_BYTES,
+                "image/png",
+            )
+        },
+        headers=headers,
+    )
+
+    assert unsupported.status_code == 415
+    assert spoofed.status_code == 415
+    assert oversized.status_code == 413
+    assert list(tmp_path.rglob("*")) == []

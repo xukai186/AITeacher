@@ -31,7 +31,7 @@ describe("Question bank OCR import", () => {
       if (url.endsWith("/org/question-bank/upload-image")) {
         expect(init?.body).toBeInstanceOf(FormData);
         return new Response(
-          JSON.stringify({ asset_id: "asset-1", url_or_path: "/media/asset-1.png" }),
+          JSON.stringify({ asset_id: "asset-1", storage_key: "org-1/asset-1" }),
           { status: 201 },
         );
       }

@@ -60,6 +60,8 @@ class SelfTestAssembler:
         if gap <= 0:
             return assembled
 
+        # Bank selection opens a read transaction; release it before the long LLM call.
+        db.commit()
         generated = PaperGenService().generate_prepared_self_test(
             provider=provider,
             model=model,
@@ -82,7 +84,17 @@ class SelfTestAssembler:
             .order_by(User.created_at.asc(), User.id.asc())
         ).scalars().first()
         if creator is None:
-            raise ValueError("organization has no staff user for AI question ingest")
+            student = db.get(User, student_user_id)
+            if student is not None and student.org_id == org_id:
+                creator = student
+            else:
+                creator = db.execute(
+                    select(User)
+                    .where(User.org_id == org_id)
+                    .order_by(User.created_at.asc(), User.id.asc())
+                ).scalars().first()
+        if creator is None:
+            raise ValueError("organization has no user for AI question ingest")
 
         for question in generated[:gap]:
             bank_item = bank_service.find_exact_duplicate(
@@ -111,6 +123,7 @@ class SelfTestAssembler:
                     difficulty=None,
                     source_type="ai_generated",
                     allow_inactive_duplicate=True,
+                    allow_machine_actor=True,
                 )
             assembled.append(
                 AssembledQuestion(

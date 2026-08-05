@@ -117,6 +117,42 @@ def test_create_rejects_exact_duplicate(db_session):
     assert exc.value.status_code == 409
 
 
+def test_duplicate_lookup_prefers_reusable_row_when_inactive_twin_exists(db_session):
+    admin, org = _admin(db_session)
+    svc = QuestionBankService()
+    inactive = _create(
+        svc,
+        db_session,
+        admin,
+        stem="Repeated AI stem",
+        source_type="ai_generated",
+    )
+    svc.reject(db_session, actor=admin, item_id=inactive.id)
+    reusable = _create(
+        svc,
+        db_session,
+        admin,
+        stem="Repeated AI stem",
+        source_type="ai_generated",
+        allow_inactive_duplicate=True,
+    )
+    db_session.flush()
+
+    duplicate = svc.find_exact_duplicate(
+        db_session,
+        scope="org",
+        org_id=org.id,
+        q_type="single_choice",
+        stem="Repeated AI stem",
+    )
+
+    assert duplicate is not None
+    assert duplicate.id == reusable.id
+    with pytest.raises(HTTPException) as exc:
+        _create(svc, db_session, admin, stem="Repeated AI stem")
+    assert exc.value.status_code == 409
+
+
 def test_approve_pending_ai_item(db_session):
     admin, _ = _admin(db_session)
     svc = QuestionBankService()

@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime, timezone
 
 from fastapi import HTTPException, status
-from sqlalchemy import func, or_, select
+from sqlalchemy import case, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.models import QuestionBankItem, User, UserRole
@@ -38,6 +38,7 @@ class QuestionBankService:
         source_type: str | None = None,
         source_image_asset_id: uuid.UUID | None = None,
         allow_inactive_duplicate: bool = False,
+        allow_machine_actor: bool = False,
     ) -> QuestionBankItem:
         if payload is not None:
             if any(
@@ -85,13 +86,18 @@ class QuestionBankService:
         assert q_type is not None
         assert stem is not None
         assert source_type is not None
-        self._authorize_create(actor, scope=scope, org_id=org_id)
         item_status = self._SOURCE_STATUSES.get(source_type)
         if item_status is None:
             raise HTTPException(
                 status.HTTP_422_UNPROCESSABLE_ENTITY,
                 "unsupported question bank source type",
             )
+        self._authorize_create(
+            actor,
+            scope=scope,
+            org_id=org_id,
+            allow_machine_actor=allow_machine_actor and source_type == "ai_generated",
+        )
 
         normalized_stem = stem.strip()
         duplicate = self.find_exact_duplicate(
@@ -214,13 +220,24 @@ class QuestionBankService:
     ) -> QuestionBankItem | None:
         normalized_stem = stem.strip()
         return db.execute(
-            select(QuestionBankItem).where(
+            select(QuestionBankItem)
+            .where(
                 QuestionBankItem.scope == scope,
                 QuestionBankItem.org_id == org_id,
                 QuestionBankItem.q_type == q_type,
                 func.btrim(QuestionBankItem.stem) == normalized_stem,
             )
-        ).scalar_one_or_none()
+            .order_by(
+                case(
+                    (QuestionBankItem.status == "active", 0),
+                    (QuestionBankItem.status == "pending_review", 1),
+                    else_=2,
+                ),
+                QuestionBankItem.created_at.desc(),
+                QuestionBankItem.id.desc(),
+            )
+            .limit(1)
+        ).scalars().first()
 
     @staticmethod
     def _require_staff(actor: User) -> None:
@@ -236,7 +253,15 @@ class QuestionBankService:
         *,
         scope: str,
         org_id: uuid.UUID | None,
+        allow_machine_actor: bool = False,
     ) -> None:
+        if allow_machine_actor:
+            if scope != "org" or org_id != actor.org_id:
+                raise HTTPException(
+                    status.HTTP_403_FORBIDDEN,
+                    "machine-authored items must belong to the actor organization",
+                )
+            return
         self._require_staff(actor)
         if scope not in ("org", "global"):
             raise HTTPException(

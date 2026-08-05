@@ -61,7 +61,7 @@ class QuestionEnrichmentOut(BaseModel):
 
 class MediaAssetOut(BaseModel):
     asset_id: uuid.UUID
-    url_or_path: str
+    storage_key: str
 
 
 class QuestionOCRRequest(BaseModel):

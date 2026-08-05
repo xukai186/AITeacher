@@ -181,10 +181,12 @@ def test_excludes_submitted_and_explicit_bank_item_ids(db_session):
 def test_assemble_fills_empty_bank_with_pending_ai_question(
     db_session, monkeypatch
 ):
-    org, _admin, student = _people(db_session)
+    org = make_org(db_session)
+    student = make_user(db_session, org, UserRole.student)
 
     def fake_generate_prepared_self_test(_self, **kwargs):
         assert kwargs["question_count"] == 1
+        assert not db_session.in_transaction()
         return [
             GeneratedQuestion(
                 seq=1,
@@ -220,6 +222,7 @@ def test_assemble_fills_empty_bank_with_pending_ai_question(
     assert bank_item.org_id == org.id
     assert bank_item.source_type == "ai_generated"
     assert bank_item.status == "pending_review"
+    assert bank_item.created_by == student.id
     assert len(assembled) == 1
     assert assembled[0].bank_item_id == bank_item.id
     assert assembled[0].selection_source == "ai_fallback"
@@ -271,3 +274,18 @@ def test_assemble_replaces_inactive_exact_duplicate(db_session, monkeypatch):
     assert next(
         item for item in bank_items if item.id == assembled[0].bank_item_id
     ).status == "pending_review"
+
+    assembled_again = SelfTestAssembler().assemble(
+        db_session,
+        org_id=org.id,
+        student_user_id=student.id,
+        subject_code="english",
+        question_count=1,
+        provider="mock-provider",
+        model="mock-model",
+        params={},
+        target_nodes=[],
+    )
+
+    assert assembled_again[0].bank_item_id == assembled[0].bank_item_id
+    assert len(db_session.execute(select(QuestionBankItem)).scalars().all()) == 2
