@@ -7,8 +7,10 @@ import AdminStudentExamProfile from "@/pages/admin/StudentExamProfile";
 import StaffList from "@/pages/admin/StaffList";
 import PackagesList from "@/pages/admin/PackagesList";
 import ModelPolicies from "@/pages/admin/ModelPolicies";
+import AdminQuestionBank from "@/pages/admin/QuestionBank";
 import MyStudents from "@/pages/staff/MyStudents";
 import StaffStudentExamProfile from "@/pages/staff/StudentExamProfile";
+import StaffQuestionBank from "@/pages/staff/QuestionBank";
 import StudentDetail from "@/pages/org/StudentDetail";
 import Workspace from "@/pages/student/Workspace";
 import Placement from "@/pages/student/Placement";
@@ -39,6 +41,7 @@ export default function App() {
         <Route path="/admin/staff" element={<StaffList />} />
         <Route path="/admin/packages" element={<PackagesList />} />
         <Route path="/admin/model-policies" element={<ModelPolicies />} />
+        <Route path="/admin/question-bank" element={<AdminQuestionBank />} />
       </Route>
 
       <Route
@@ -51,6 +54,7 @@ export default function App() {
         <Route path="/staff/students" element={<MyStudents />} />
         <Route path="/staff/students/:studentId" element={<StudentDetail />} />
         <Route path="/staff/students/:studentId/exam-profile" element={<StaffStudentExamProfile />} />
+        <Route path="/staff/question-bank" element={<StaffQuestionBank />} />
       </Route>
 
       <Route
