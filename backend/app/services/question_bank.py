@@ -37,6 +37,7 @@ class QuestionBankService:
         difficulty: int | None = None,
         source_type: str | None = None,
         source_image_asset_id: uuid.UUID | None = None,
+        allow_inactive_duplicate: bool = False,
     ) -> QuestionBankItem:
         if payload is not None:
             if any(
@@ -100,7 +101,10 @@ class QuestionBankService:
             q_type=q_type,
             stem=normalized_stem,
         )
-        if duplicate is not None:
+        if duplicate is not None and not (
+            allow_inactive_duplicate
+            and duplicate.status not in ("active", "pending_review")
+        ):
             raise HTTPException(
                 status.HTTP_409_CONFLICT,
                 "exact question bank duplicate",

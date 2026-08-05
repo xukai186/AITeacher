@@ -1,3 +1,5 @@
+from sqlalchemy import select
+
 from app.models import (
     QuestionBankItem,
     SelfTestPaper,
@@ -5,6 +7,7 @@ from app.models import (
     SelfTestSubmission,
     UserRole,
 )
+from app.services.paper_gen import GeneratedQuestion, PaperGenService
 from app.services.self_test_assembler import SelfTestAssembler
 from tests.factories import make_org, make_user
 
@@ -173,3 +176,98 @@ def test_excludes_submitted_and_explicit_bank_item_ids(db_session):
         "bank_org",
         "bank_global",
     ]
+
+
+def test_assemble_fills_empty_bank_with_pending_ai_question(
+    db_session, monkeypatch
+):
+    org, _admin, student = _people(db_session)
+
+    def fake_generate_prepared_self_test(_self, **kwargs):
+        assert kwargs["question_count"] == 1
+        return [
+            GeneratedQuestion(
+                seq=1,
+                knowledge_node_id=None,
+                q_type="single_choice",
+                stem="AI fallback question",
+                choices_json=[{"key": "A", "text": "answer"}],
+                answer_key="A",
+                points=2,
+            )
+        ]
+
+    monkeypatch.setattr(
+        PaperGenService,
+        "generate_prepared_self_test",
+        fake_generate_prepared_self_test,
+    )
+
+    assembled = SelfTestAssembler().assemble(
+        db_session,
+        org_id=org.id,
+        student_user_id=student.id,
+        subject_code="english",
+        question_count=1,
+        provider="mock-provider",
+        model="mock-model",
+        params={"temperature": 0},
+        target_nodes=[],
+    )
+
+    bank_item = db_session.execute(select(QuestionBankItem)).scalar_one()
+    assert bank_item.scope == "org"
+    assert bank_item.org_id == org.id
+    assert bank_item.source_type == "ai_generated"
+    assert bank_item.status == "pending_review"
+    assert len(assembled) == 1
+    assert assembled[0].bank_item_id == bank_item.id
+    assert assembled[0].selection_source == "ai_fallback"
+    assert assembled[0].seq == 1
+
+
+def test_assemble_replaces_inactive_exact_duplicate(db_session, monkeypatch):
+    org, admin, student = _people(db_session)
+    inactive = _bank_item(
+        db_session,
+        creator=admin,
+        scope="org",
+        org_id=org.id,
+        stem="Previously rejected question",
+        status="rejected",
+    )
+
+    monkeypatch.setattr(
+        PaperGenService,
+        "generate_prepared_self_test",
+        lambda _self, **_kwargs: [
+            GeneratedQuestion(
+                seq=1,
+                knowledge_node_id=None,
+                q_type="single_choice",
+                stem=inactive.stem,
+                choices_json=inactive.choices_json,
+                answer_key=inactive.answer_key,
+                points=1,
+            )
+        ],
+    )
+
+    assembled = SelfTestAssembler().assemble(
+        db_session,
+        org_id=org.id,
+        student_user_id=student.id,
+        subject_code="english",
+        question_count=1,
+        provider="mock-provider",
+        model="mock-model",
+        params={},
+        target_nodes=[],
+    )
+
+    bank_items = db_session.execute(select(QuestionBankItem)).scalars().all()
+    assert len(bank_items) == 2
+    assert assembled[0].bank_item_id != inactive.id
+    assert next(
+        item for item in bank_items if item.id == assembled[0].bank_item_id
+    ).status == "pending_review"

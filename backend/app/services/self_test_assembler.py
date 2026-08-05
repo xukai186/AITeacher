@@ -11,7 +11,12 @@ from app.models import (
     SelfTestPaper,
     SelfTestQuestion,
     SelfTestSubmission,
+    SyllabusNode,
+    User,
+    UserRole,
 )
+from app.services.paper_gen import PaperGenService, ProgressCallback
+from app.services.question_bank import QuestionBankService
 
 
 @dataclass
@@ -28,6 +33,103 @@ class AssembledQuestion:
 
 
 class SelfTestAssembler:
+    def assemble(
+        self,
+        db: Session,
+        *,
+        org_id: uuid.UUID,
+        student_user_id: uuid.UUID,
+        subject_code: str,
+        question_count: int,
+        provider: str | None,
+        model: str | None,
+        params: dict | None,
+        target_nodes: list[SyllabusNode],
+        english_track: str | None = None,
+        math_track: str | None = None,
+        on_progress: ProgressCallback | None = None,
+    ) -> list[AssembledQuestion]:
+        assembled = self.select_from_bank(
+            db,
+            org_id=org_id,
+            student_user_id=student_user_id,
+            subject_code=subject_code,
+            count=question_count,
+        )
+        gap = question_count - len(assembled)
+        if gap <= 0:
+            return assembled
+
+        generated = PaperGenService().generate_prepared_self_test(
+            provider=provider,
+            model=model,
+            params=params,
+            target_nodes=target_nodes,
+            student_user_id=student_user_id,
+            subject_code=subject_code,
+            question_count=gap,
+            english_track=english_track,
+            math_track=math_track,
+            on_progress=on_progress,
+        )
+        bank_service = QuestionBankService()
+        creator = db.execute(
+            select(User)
+            .where(
+                User.org_id == org_id,
+                User.role.in_((UserRole.org_admin, UserRole.org_staff)),
+            )
+            .order_by(User.created_at.asc(), User.id.asc())
+        ).scalars().first()
+        if creator is None:
+            raise ValueError("organization has no staff user for AI question ingest")
+
+        for question in generated[:gap]:
+            bank_item = bank_service.find_exact_duplicate(
+                db,
+                scope="org",
+                org_id=org_id,
+                q_type=question.q_type,
+                stem=question.stem,
+            )
+            if bank_item is None or bank_item.status not in (
+                "active",
+                "pending_review",
+            ):
+                bank_item = bank_service.create(
+                    db,
+                    actor=creator,
+                    scope="org",
+                    org_id=org_id,
+                    subject_code=subject_code,
+                    knowledge_node_id=question.knowledge_node_id,
+                    q_type=question.q_type,
+                    stem=question.stem,
+                    choices_json=question.choices_json,
+                    answer_key=question.answer_key,
+                    analysis_text=None,
+                    difficulty=None,
+                    source_type="ai_generated",
+                    allow_inactive_duplicate=True,
+                )
+            assembled.append(
+                AssembledQuestion(
+                    bank_item_id=bank_item.id,
+                    selection_source="ai_fallback",
+                    knowledge_node_id=question.knowledge_node_id,
+                    q_type=question.q_type,
+                    stem=question.stem,
+                    choices_json=question.choices_json,
+                    answer_key=question.answer_key,
+                    points=question.points,
+                    seq=0,
+                )
+            )
+
+        for seq, question in enumerate(assembled, start=1):
+            question.seq = seq
+        return assembled
+
     def select_from_bank(
         self,
         db: Session,
