@@ -70,6 +70,20 @@ def _sync_test_schema(connection, *, commit: bool = False) -> None:
             connection.execute(
                 text("ALTER TABLE past_exam_paper_templates ADD COLUMN math_track VARCHAR(20) NULL")
             )
+    if "self_test_questions" in insp.get_table_names():
+        stq_cols = {c["name"] for c in insp.get_columns("self_test_questions")}
+        if "bank_item_id" not in stq_cols:
+            connection.execute(
+                text(
+                    "ALTER TABLE self_test_questions "
+                    "ADD COLUMN bank_item_id UUID NULL "
+                    "REFERENCES question_bank_items(id) ON DELETE SET NULL"
+                )
+            )
+        if "selection_source" not in stq_cols:
+            connection.execute(
+                text("ALTER TABLE self_test_questions ADD COLUMN selection_source VARCHAR(40) NULL")
+            )
     if commit:
         connection.commit()
 

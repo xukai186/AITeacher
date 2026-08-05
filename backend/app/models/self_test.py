@@ -45,6 +45,12 @@ class SelfTestQuestion(Base):
     answer_key: Mapped[str | None] = mapped_column(String(2000), nullable=True)
     points: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     rubric_json: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    bank_item_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("question_bank_items.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    selection_source: Mapped[str | None] = mapped_column(String(40), nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False

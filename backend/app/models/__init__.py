@@ -20,6 +20,7 @@ from app.models.self_test import (
 )
 from app.models.plan import MasterPlan, MasterPlanVersion, SubjectPlan, SubjectPlanVersion
 from app.models.paper_gen_job import PaperGenJob
+from app.models.question_bank import MediaAsset, QuestionBankItem
 from app.models.plan_review_job import PlanReviewJob
 from app.models.roadmap_generation_job import RoadmapGenerationJob
 from app.models.staff_student import StaffStudent
@@ -49,7 +50,9 @@ __all__ = [
     "Package",
     "PastExamQuestion",
     "PastExamPaperTemplate",
+    "MediaAsset",
     "PaperGenJob",
+    "QuestionBankItem",
     "PlanReviewJob",
     "PlacementAnswer",
     "PlacementPaper",
