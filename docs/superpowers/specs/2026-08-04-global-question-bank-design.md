@@ -1,7 +1,7 @@
 # 全局题库（混合范围）— 产品设计规格
 
 **日期：** 2026-08-04  
-**状态：** 待实现  
+**状态：** 已实现 (P1–P3)  
 **依赖：** 现有自测与 `paper_gen_jobs`（`SelfTestPaper` / `SelfTestQuestion`）、大纲 `syllabus_nodes`、admin/staff RBAC、模型策略（OCR / 属性补全）
 
 ---
