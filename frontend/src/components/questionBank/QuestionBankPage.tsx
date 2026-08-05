@@ -7,7 +7,9 @@ import {
   Enrichment,
   listQuestions,
   QuestionBankRole,
+  recognizeQuestion,
   reviewQuestion,
+  uploadQuestionImage,
 } from "@/api/questionBank";
 
 const SUBJECTS = [
@@ -62,6 +64,9 @@ export default function QuestionBankPage({ role }: { role: QuestionBankRole }) {
   const [status, setStatus] = useState("");
   const [pendingOnly, setPendingOnly] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
+  const [createMode, setCreateMode] = useState<"manual" | "ocr">("manual");
+  const [ocrFile, setOcrFile] = useState<File | null>(null);
+  const [sourceImageAssetId, setSourceImageAssetId] = useState<string | null>(null);
   const [draft, setDraft] = useState<Draft>(EMPTY_DRAFT);
   const [confirmation, setConfirmation] = useState<Enrichment | null>(null);
   const [scope, setScope] = useState<"org" | "global">("org");
@@ -81,6 +86,25 @@ export default function QuestionBankPage({ role }: { role: QuestionBankRole }) {
       }
     },
   });
+  const ocrMutation = useMutation({
+    mutationFn: async (file: File) => {
+      const uploaded = await uploadQuestionImage(file);
+      const recognized = await recognizeQuestion(uploaded.asset_id);
+      return { uploaded, recognized };
+    },
+    onSuccess: ({ uploaded, recognized }) => {
+      setSourceImageAssetId(uploaded.asset_id);
+      setDraft({
+        stem: recognized.stem,
+        qType: recognized.q_type,
+        choicesText:
+          recognized.choices
+            ?.map((choice) => `${choice.key}. ${choice.text}`)
+            .join("\n") ?? "",
+        answerKey: recognized.answer_key ?? "",
+      });
+    },
+  });
   const createMutation = useMutation({
     mutationFn: createQuestion,
     onSuccess: () => {
@@ -88,6 +112,9 @@ export default function QuestionBankPage({ role }: { role: QuestionBankRole }) {
       setDraft(EMPTY_DRAFT);
       setConfirmation(null);
       setScope("org");
+      setCreateMode("manual");
+      setOcrFile(null);
+      setSourceImageAssetId(null);
       queryClient.invalidateQueries({ queryKey: ["question-bank"] });
     },
   });
@@ -124,17 +151,38 @@ export default function QuestionBankPage({ role }: { role: QuestionBankRole }) {
       ...confirmation,
       q_type: confirmation.q_type ?? draft.qType,
       scope,
-      source_type: role === "org_admin" ? "admin_manual" : "staff_manual",
+      source_type:
+        createMode === "ocr"
+          ? "ocr_import"
+          : role === "org_admin"
+            ? "admin_manual"
+            : "staff_manual",
+      source_image_asset_id:
+        createMode === "ocr" ? sourceImageAssetId ?? undefined : undefined,
     };
     createMutation.mutate(body);
   };
 
   const closeCreate = () => {
     setShowCreate(false);
+    setCreateMode("manual");
+    setOcrFile(null);
+    setSourceImageAssetId(null);
     setDraft(EMPTY_DRAFT);
     setConfirmation(null);
+    ocrMutation.reset();
     enrichMutation.reset();
     createMutation.reset();
+  };
+
+  const selectCreateMode = (mode: "manual" | "ocr") => {
+    setCreateMode(mode);
+    setOcrFile(null);
+    setSourceImageAssetId(null);
+    setDraft(EMPTY_DRAFT);
+    setConfirmation(null);
+    ocrMutation.reset();
+    enrichMutation.reset();
   };
 
   return (
@@ -271,6 +319,52 @@ export default function QuestionBankPage({ role }: { role: QuestionBankRole }) {
             {!confirmation ? (
               <form onSubmit={onEnrich} className="space-y-4">
                 <h2 className="text-lg font-semibold">新建题目</h2>
+                <div className="flex gap-2 border-b pb-3">
+                  <button
+                    type="button"
+                    onClick={() => selectCreateMode("manual")}
+                    className={`rounded px-3 py-2 ${
+                      createMode === "manual" ? "bg-slate-900 text-white" : "bg-slate-100"
+                    }`}
+                  >
+                    手工添加
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => selectCreateMode("ocr")}
+                    className={`rounded px-3 py-2 ${
+                      createMode === "ocr" ? "bg-slate-900 text-white" : "bg-slate-100"
+                    }`}
+                  >
+                    图片识别添加
+                  </button>
+                </div>
+                {createMode === "ocr" && (
+                  <div className="space-y-3 rounded border border-dashed p-4">
+                    <label className="block space-y-1">
+                      <span>题目图片</span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={(event) => setOcrFile(event.target.files?.[0] ?? null)}
+                        className="block w-full text-sm"
+                      />
+                    </label>
+                    <button
+                      type="button"
+                      disabled={!ocrFile || ocrMutation.isPending}
+                      onClick={() => ocrFile && ocrMutation.mutate(ocrFile)}
+                      className="rounded bg-slate-700 px-4 py-2 text-white disabled:opacity-50"
+                    >
+                      {ocrMutation.isPending ? "识别中…" : "开始识别"}
+                    </button>
+                    {ocrMutation.error && (
+                      <p role="alert" className="text-sm text-red-600">
+                        {(ocrMutation.error as Error).message}
+                      </p>
+                    )}
+                  </div>
+                )}
                 <label className="block space-y-1">
                   <span>题型</span>
                   <select

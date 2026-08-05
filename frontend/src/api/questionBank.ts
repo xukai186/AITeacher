@@ -35,9 +35,19 @@ export type Enrichment = {
   q_type: string | null;
 };
 
+export type UploadedQuestionImage = {
+  asset_id: string;
+  url_or_path: string;
+};
+
+export type RecognizedQuestion = QuestionDraft & {
+  choices?: Array<{ key: string; text: string }>;
+};
+
 export type CreateQuestion = QuestionDraft & Enrichment & {
   scope: "org" | "global";
-  source_type: "admin_manual" | "staff_manual";
+  source_type: "admin_manual" | "staff_manual" | "ocr_import";
+  source_image_asset_id?: string;
 };
 
 export type QuestionFilters = {
@@ -59,6 +69,22 @@ export function enrichQuestion(body: QuestionDraft) {
   return api<Enrichment>("/org/question-bank/enrich", {
     method: "POST",
     body: JSON.stringify(body),
+  });
+}
+
+export function uploadQuestionImage(file: File) {
+  const body = new FormData();
+  body.append("file", file);
+  return api<UploadedQuestionImage>("/org/question-bank/upload-image", {
+    method: "POST",
+    body,
+  });
+}
+
+export function recognizeQuestion(assetId: string) {
+  return api<RecognizedQuestion>("/org/question-bank/ocr", {
+    method: "POST",
+    body: JSON.stringify({ asset_id: assetId }),
   });
 }
 
