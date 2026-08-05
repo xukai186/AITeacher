@@ -19,3 +19,10 @@ Verification:
 - `git diff --check`
   - passed
 - Frontend OCR test was attempted, but this worktree lacked `node_modules`; `npm ci` failed in npm itself with `Exit handler never called`.
+
+## Final review follow-up
+
+- Weak-node and weekly-focus resolution now roll back the session and log the exception before falling back to an empty targeting set.
+- Added a regression test proving bank selection still returns an organization L3 item after weak-node resolution leaves the simulated transaction requiring rollback.
+- `/Users/bytedance/cursor/AITeacher/backend/.venv/bin/python -m pytest tests/test_self_test_assembler.py -q`
+  - `12 passed, 2 warnings in 0.90s`

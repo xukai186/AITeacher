@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import uuid
 from dataclasses import dataclass
 
@@ -19,6 +20,9 @@ from app.services.master_plan_activation import MasterPlanActivationService
 from app.services.paper_gen import PaperGenService, ProgressCallback
 from app.services.question_bank import QuestionBankService
 from app.services.report import ReportQuery, ReportService
+
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -51,6 +55,8 @@ class SelfTestAssembler:
                 ),
             )
         except Exception:
+            db.rollback()
+            logger.exception("Failed to resolve weak nodes for self-test selection")
             return set()
 
         return {
@@ -73,6 +79,10 @@ class SelfTestAssembler:
             )
             active_version = state.get("active_version")
         except Exception:
+            db.rollback()
+            logger.exception(
+                "Failed to resolve weekly focus nodes for self-test selection"
+            )
             return set()
 
         if active_version is None:

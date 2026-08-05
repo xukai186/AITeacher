@@ -19,6 +19,7 @@ from app.services.paper_gen import (
     GeneratedQuestion,
     PaperGenService,
 )
+from app.services.report import ReportService
 from app.services.self_test_assembler import SelfTestAssembler
 from tests.factories import make_org, make_user
 
@@ -125,6 +126,53 @@ def test_weak_node_ids_from_overview(db_session):
     )
 
     assert node.id in ids
+
+
+def test_select_falls_back_to_l3_after_weak_resolution_failure(
+    db_session, monkeypatch
+):
+    org, admin, student = _people(db_session)
+    item = _bank_item(
+        db_session,
+        creator=admin,
+        scope="org",
+        org_id=org.id,
+        stem="L3 fallback",
+    )
+    db_session.commit()
+    transaction_failed = False
+    original_execute = db_session.execute
+    original_rollback = db_session.rollback
+
+    def failing_overview(*_args, **_kwargs):
+        nonlocal transaction_failed
+        transaction_failed = True
+        raise RuntimeError("report query failed")
+
+    def execute_after_failure(*args, **kwargs):
+        if transaction_failed:
+            raise RuntimeError("transaction requires rollback")
+        return original_execute(*args, **kwargs)
+
+    def rollback():
+        nonlocal transaction_failed
+        transaction_failed = False
+        return original_rollback()
+
+    monkeypatch.setattr(ReportService, "overview", failing_overview)
+    monkeypatch.setattr(db_session, "execute", execute_after_failure)
+    monkeypatch.setattr(db_session, "rollback", rollback)
+
+    selected = SelfTestAssembler().select_from_bank(
+        db_session,
+        org_id=org.id,
+        student_user_id=student.id,
+        subject_code="english",
+        count=1,
+    )
+
+    assert [question.bank_item_id for question in selected] == [item.id]
+    assert selected[0].selection_source == "bank_org"
 
 
 def test_weekly_focus_node_ids_from_active_master(db_session):
