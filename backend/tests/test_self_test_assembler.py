@@ -1,11 +1,17 @@
+import uuid
+
 from sqlalchemy import select
 
 from app.models import (
+    MasterPlan,
+    MasterPlanVersion,
     QuestionBankItem,
     SelfTestPaper,
     SelfTestQuestion,
     SelfTestSubmission,
+    SyllabusNode,
     UserRole,
+    WrongBookItem,
 )
 from app.services.paper_gen import GeneratedQuestion, PaperGenService
 from app.services.self_test_assembler import SelfTestAssembler
@@ -38,6 +44,100 @@ def _people(db):
     admin = make_user(db, org, UserRole.org_admin)
     student = make_user(db, org, UserRole.student)
     return org, admin, student
+
+
+def _english_leaf(db):
+    node = SyllabusNode(subject_code="english", name="English leaf")
+    db.add(node)
+    db.flush()
+    return node
+
+
+def _wrong_book_item(db, student_user_id, knowledge_node_id):
+    item = WrongBookItem(
+        student_user_id=student_user_id,
+        subject_code="english",
+        knowledge_node_id=knowledge_node_id,
+        source_type="self_test",
+        source_id=uuid.uuid4(),
+        question_snapshot_json={},
+        answer_snapshot_json={},
+        correct_snapshot_json={},
+    )
+    db.add(item)
+    db.flush()
+    return item
+
+
+def _seed_master_with_focus(db, student_user_id, subject_code, node_ids):
+    plan = MasterPlan(student_user_id=student_user_id)
+    db.add(plan)
+    db.flush()
+    version = MasterPlanVersion(
+        plan_id=plan.id,
+        version=1,
+        source="ai",
+        weekly_goals_json=[
+            {
+                "kind": "focus",
+                "subject_code": subject_code,
+                "syllabus_node_ids": [str(node_id) for node_id in node_ids],
+                "title": "t",
+                "description": "d",
+            }
+        ],
+        daily_time_budget_json=[],
+    )
+    db.add(version)
+    db.flush()
+    plan.current_version_id = version.id
+    db.flush()
+    return plan
+
+
+def test_weak_node_ids_from_overview(db_session):
+    _, _, student = _people(db_session)
+    node = _english_leaf(db_session)
+    _wrong_book_item(db_session, student.id, node.id)
+    db_session.commit()
+
+    ids = SelfTestAssembler()._weak_node_ids(
+        db_session,
+        student_user_id=student.id,
+        subject_code="english",
+    )
+
+    assert node.id in ids
+
+
+def test_weekly_focus_node_ids_from_active_master(db_session):
+    _, _, student = _people(db_session)
+    node_id = uuid.uuid4()
+    _seed_master_with_focus(db_session, student.id, "english", [node_id])
+    db_session.commit()
+
+    ids = SelfTestAssembler()._weekly_focus_node_ids(
+        db_session,
+        student_user_id=student.id,
+        subject_code="english",
+    )
+
+    assert node_id in ids
+
+
+def test_weekly_focus_ignores_other_subject(db_session):
+    _, _, student = _people(db_session)
+    math_id = uuid.uuid4()
+    _seed_master_with_focus(db_session, student.id, "math", [math_id])
+    db_session.commit()
+
+    ids = SelfTestAssembler()._weekly_focus_node_ids(
+        db_session,
+        student_user_id=student.id,
+        subject_code="english",
+    )
+
+    assert math_id not in ids
 
 
 def test_selects_active_org_items_before_active_global_items(db_session):

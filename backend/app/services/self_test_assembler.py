@@ -15,8 +15,10 @@ from app.models import (
     User,
     UserRole,
 )
+from app.services.master_plan_activation import MasterPlanActivationService
 from app.services.paper_gen import PaperGenService, ProgressCallback
 from app.services.question_bank import QuestionBankService
+from app.services.report import ReportQuery, ReportService
 
 
 @dataclass
@@ -33,6 +35,64 @@ class AssembledQuestion:
 
 
 class SelfTestAssembler:
+    def _weak_node_ids(
+        self,
+        db: Session,
+        *,
+        student_user_id: uuid.UUID,
+        subject_code: str,
+    ) -> set[uuid.UUID]:
+        try:
+            overview = ReportService.overview(
+                db,
+                ReportQuery(
+                    student_user_id=student_user_id,
+                    subject_code=subject_code,
+                ),
+            )
+        except Exception:
+            return set()
+
+        return {
+            weak_node.knowledge_node_id
+            for weak_node in overview.weak_nodes or []
+            if weak_node.knowledge_node_id is not None
+        }
+
+    def _weekly_focus_node_ids(
+        self,
+        db: Session,
+        *,
+        student_user_id: uuid.UUID,
+        subject_code: str,
+    ) -> set[uuid.UUID]:
+        try:
+            state = MasterPlanActivationService().get_state(
+                db,
+                student_user_id=student_user_id,
+            )
+            active_version = state.get("active_version")
+        except Exception:
+            return set()
+
+        if active_version is None:
+            return set()
+
+        node_ids: set[uuid.UUID] = set()
+        for goal in active_version.weekly_goals_json or []:
+            if not isinstance(goal, dict):
+                continue
+            if goal.get("kind") != "focus":
+                continue
+            if goal.get("subject_code") != subject_code:
+                continue
+            for raw_node_id in goal.get("syllabus_node_ids") or []:
+                try:
+                    node_ids.add(uuid.UUID(str(raw_node_id)))
+                except (TypeError, ValueError):
+                    continue
+        return node_ids
+
     def assemble(
         self,
         db: Session,
