@@ -1,4 +1,4 @@
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   createQuestion,
@@ -6,6 +6,7 @@ import {
   enrichQuestion,
   Enrichment,
   listQuestions,
+  QuestionBankItem,
   QuestionBankRole,
   recognizeQuestion,
   reviewQuestion,
@@ -63,6 +64,10 @@ export default function QuestionBankPage({ role }: { role: QuestionBankRole }) {
   const [subject, setSubject] = useState("");
   const [status, setStatus] = useState("");
   const [pendingOnly, setPendingOnly] = useState(false);
+  const [offset, setOffset] = useState(0);
+  const limit = 20;
+  const [allItems, setAllItems] = useState<QuestionBankItem[]>([]);
+  const [hasMore, setHasMore] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
   const [createMode, setCreateMode] = useState<"manual" | "ocr">("manual");
   const [ocrFile, setOcrFile] = useState<File | null>(null);
@@ -71,11 +76,36 @@ export default function QuestionBankPage({ role }: { role: QuestionBankRole }) {
   const [confirmation, setConfirmation] = useState<Enrichment | null>(null);
   const [scope, setScope] = useState<"org" | "global">("org");
 
-  const filters = { subject_code: subject, status, pending: pendingOnly };
+  const filters = { subject_code: subject, status, pending: pendingOnly, limit, offset };
   const questions = useQuery({
     queryKey: ["question-bank", filters],
     queryFn: () => listQuestions(filters),
   });
+
+  useEffect(() => {
+    setOffset(0);
+    setAllItems([]);
+    setHasMore(true);
+  }, [subject, status, pendingOnly]);
+
+  useEffect(() => {
+    if (!questions.data) return;
+    setAllItems((prev) => {
+      const existing = new Set(prev.map((item) => item.id));
+      const next = [...prev];
+      for (const item of questions.data) {
+        if (!existing.has(item.id)) next.push(item);
+      }
+      return next;
+    });
+    setHasMore(questions.data.length === limit);
+  }, [questions.data, limit]);
+
+  const resetList = () => {
+    setOffset(0);
+    setAllItems([]);
+    setHasMore(true);
+  };
 
   const enrichMutation = useMutation({
     mutationFn: enrichQuestion,
@@ -115,6 +145,7 @@ export default function QuestionBankPage({ role }: { role: QuestionBankRole }) {
       setCreateMode("manual");
       setOcrFile(null);
       setSourceImageAssetId(null);
+      resetList();
       queryClient.invalidateQueries({ queryKey: ["question-bank"] });
     },
   });
@@ -126,7 +157,10 @@ export default function QuestionBankPage({ role }: { role: QuestionBankRole }) {
       id: string;
       action: "approve" | "reject" | "disable";
     }) => reviewQuestion(id, action),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["question-bank"] }),
+    onSuccess: () => {
+      resetList();
+      queryClient.invalidateQueries({ queryKey: ["question-bank"] });
+    },
   });
 
   const questionDraft = () => ({
@@ -235,16 +269,18 @@ export default function QuestionBankPage({ role }: { role: QuestionBankRole }) {
       </section>
 
       <section className="overflow-hidden rounded bg-white shadow">
-        {questions.isLoading && <p className="p-4 text-slate-500">加载中…</p>}
+        {questions.isLoading && allItems.length === 0 && (
+          <p className="p-4 text-slate-500">加载中…</p>
+        )}
         {questions.error && (
           <p role="alert" className="p-4 text-red-600">
             {(questions.error as Error).message}
           </p>
         )}
-        {questions.data?.length === 0 && (
+        {!questions.isLoading && !questions.error && allItems.length === 0 && (
           <p className="p-6 text-center text-slate-500">暂无题目</p>
         )}
-        {!!questions.data?.length && (
+        {!!allItems.length && (
           <table className="w-full text-sm">
             <thead className="bg-slate-100 text-left">
               <tr>
@@ -256,7 +292,7 @@ export default function QuestionBankPage({ role }: { role: QuestionBankRole }) {
               </tr>
             </thead>
             <tbody>
-              {questions.data.map((item) => {
+              {allItems.map((item) => {
                 const canMutate = role === "org_admin" || item.scope === "org";
                 return (
                   <tr key={item.id} className="border-t align-top">
@@ -305,6 +341,22 @@ export default function QuestionBankPage({ role }: { role: QuestionBankRole }) {
               })}
             </tbody>
           </table>
+        )}
+        {!!allItems.length && (
+          <div className="flex justify-center border-t p-4">
+            {hasMore ? (
+              <button
+                type="button"
+                className="rounded border bg-white px-3 py-2 text-sm hover:bg-slate-50 disabled:opacity-50"
+                onClick={() => setOffset((current) => current + limit)}
+                disabled={questions.isLoading}
+              >
+                {questions.isLoading ? "加载中…" : "加载更多"}
+              </button>
+            ) : (
+              <span className="text-sm text-slate-500">没有更多了</span>
+            )}
+          </div>
         )}
         {reviewMutation.error && (
           <p role="alert" className="border-t p-3 text-sm text-red-600">

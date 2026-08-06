@@ -271,3 +271,23 @@ def test_list_visibility_and_filters(db_session):
     assert admin_ids == {own_active.id, own_pending.id, global_pending.id}
     assert pending_ids == {own_pending.id, global_pending.id}
     assert english_pending_ids == {global_pending.id}
+
+
+def test_list_supports_pagination(db_session):
+    admin, _org = _admin(db_session)
+    svc = QuestionBankService()
+    created = [
+        _create(svc, db_session, admin, stem=f"Question {index}")
+        for index in range(3)
+    ]
+    db_session.flush()
+
+    page1 = svc.list(db_session, viewer=admin, limit=2, offset=0)
+    page2 = svc.list(db_session, viewer=admin, limit=2, offset=2)
+
+    created_ids = {item.id for item in created}
+    assert len(page1) == 2
+    assert len(page2) == 1
+    assert {item.id for item in page1}.issubset(created_ids)
+    assert {item.id for item in page2}.issubset(created_ids)
+    assert {item.id for item in page1}.isdisjoint({item.id for item in page2})

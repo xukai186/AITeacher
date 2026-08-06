@@ -54,6 +54,8 @@ export type QuestionFilters = {
   subject_code?: string;
   status?: string;
   pending?: boolean;
+  limit?: number;
+  offset?: number;
 };
 
 export function listQuestions(filters: QuestionFilters) {
@@ -61,6 +63,8 @@ export function listQuestions(filters: QuestionFilters) {
   if (filters.subject_code) params.set("subject_code", filters.subject_code);
   if (filters.status) params.set("status", filters.status);
   if (filters.pending) params.set("pending", "true");
+  if (filters.limit != null) params.set("limit", String(filters.limit));
+  if (filters.offset != null) params.set("offset", String(filters.offset));
   const query = params.toString();
   return api<QuestionBankItem[]>(`/org/question-bank${query ? `?${query}` : ""}`);
 }

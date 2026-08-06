@@ -135,3 +135,34 @@ def test_student_cannot_access_org_question_bank(client, db_session):
         headers=_headers(client, student.email),
     )
     assert response.status_code == 403
+
+
+def test_question_bank_list_supports_pagination(client, db_session):
+    admin = _seed_user(db_session, UserRole.org_admin, email="bank-page-admin@example.com")
+    headers = _headers(client, admin.email)
+
+    for index in range(3):
+        created = client.post(
+            "/org/question-bank",
+            json=_question_payload(stem=f"Paginated question {index}"),
+            headers=headers,
+        )
+        assert created.status_code == 201
+
+    page1 = client.get(
+        "/org/question-bank?limit=2&offset=0",
+        headers=headers,
+    )
+    assert page1.status_code == 200
+    assert len(page1.json()) == 2
+
+    page2 = client.get(
+        "/org/question-bank?limit=2&offset=2",
+        headers=headers,
+    )
+    assert page2.status_code == 200
+    assert len(page2.json()) == 1
+
+    page1_ids = {row["id"] for row in page1.json()}
+    page2_ids = {row["id"] for row in page2.json()}
+    assert page1_ids.isdisjoint(page2_ids)

@@ -176,4 +176,70 @@ describe("Question bank", () => {
       ],
     });
   });
+
+  it("loads more questions with limit and offset", async () => {
+    const page1 = Array.from({ length: 20 }, (_, index) => ({
+      id: `q-${index + 1}`,
+      scope: "org" as const,
+      org_id: "org-1",
+      subject_code: "english",
+      knowledge_node_id: null,
+      q_type: "single_choice",
+      stem: `Question ${index + 1}`,
+      choices: [{ key: "A", text: "One" }],
+      answer_key: "A",
+      analysis_text: null,
+      difficulty: 2,
+      source_type: "staff_manual",
+      status: "active" as const,
+      created_at: "2026-01-01T00:00:00Z",
+    }));
+    const page2 = [
+      {
+        id: "q-21",
+        scope: "org" as const,
+        org_id: "org-1",
+        subject_code: "english",
+        knowledge_node_id: null,
+        q_type: "single_choice",
+        stem: "Question 21",
+        choices: [{ key: "A", text: "One" }],
+        answer_key: "A",
+        analysis_text: null,
+        difficulty: 2,
+        source_type: "staff_manual",
+        status: "active" as const,
+        created_at: "2026-01-01T00:00:00Z",
+      },
+    ];
+
+    const fetchMock = vi.fn(async (input: RequestInfo) => {
+      const url = String(input);
+      if (url.includes("/org/question-bank") && !url.includes("/enrich")) {
+        const parsed = new URL(url, "http://localhost");
+        const offset = Number(parsed.searchParams.get("offset") ?? "0");
+        return new Response(JSON.stringify(offset === 0 ? page1 : page2), {
+          status: 200,
+        });
+      }
+      return new Response("not found", { status: 404 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderPage();
+    await waitFor(() => expect(screen.getByText("Question 1")).toBeTruthy());
+    expect(screen.queryByText("Question 21")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "加载更多" }));
+
+    await waitFor(() => expect(screen.getByText("Question 21")).toBeTruthy());
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining("limit=20"),
+      expect.anything(),
+    );
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining("offset=20"),
+      expect.anything(),
+    );
+  });
 });
