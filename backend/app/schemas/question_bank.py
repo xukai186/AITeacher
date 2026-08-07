@@ -54,6 +54,7 @@ class QuestionEnrichmentRequest(BaseModel):
 class QuestionEnrichmentOut(BaseModel):
     subject_code: str
     knowledge_node_id: uuid.UUID | None
+    knowledge_node_name: str | None = None
     difficulty: int
     analysis_text: str | None
     q_type: str | None
@@ -81,6 +82,7 @@ class QuestionBankItemOut(BaseModel):
     org_id: uuid.UUID | None
     subject_code: str
     knowledge_node_id: uuid.UUID | None
+    knowledge_node_name: str | None = None
     q_type: str
     stem: str
     choices: list[dict] | None

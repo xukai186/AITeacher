@@ -9,6 +9,7 @@ export type QuestionBankItem = {
   org_id: string | null;
   subject_code: string;
   knowledge_node_id: string | null;
+  knowledge_node_name?: string | null;
   q_type: string;
   stem: string;
   choices: Array<{ key?: string; text?: string; [key: string]: unknown }> | null;
@@ -30,6 +31,7 @@ export type QuestionDraft = {
 export type Enrichment = {
   subject_code: string;
   knowledge_node_id: string | null;
+  knowledge_node_name?: string | null;
   difficulty: number;
   analysis_text: string | null;
   q_type: string | null;

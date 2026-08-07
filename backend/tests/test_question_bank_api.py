@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from app.auth.security import hash_password
-from app.models import UserRole
+from app.models import SyllabusNode, UserRole
 from tests.factories import make_org, make_user
 
 
@@ -166,3 +166,38 @@ def test_question_bank_list_supports_pagination(client, db_session):
     page1_ids = {row["id"] for row in page1.json()}
     page2_ids = {row["id"] for row in page2.json()}
     assert page1_ids.isdisjoint(page2_ids)
+
+
+def test_question_bank_list_resolves_knowledge_node_name(client, db_session):
+    admin = _seed_user(db_session, UserRole.org_admin, email="bank-node-admin@example.com")
+    parent = SyllabusNode(subject_code="math", name="极限", parent_id=None, weight=1)
+    db_session.add(parent)
+    db_session.flush()
+    leaf = SyllabusNode(
+        subject_code="math",
+        name="导数",
+        parent_id=parent.id,
+        weight=1,
+    )
+    db_session.add(leaf)
+    db_session.commit()
+
+    headers = _headers(client, admin.email)
+    created = client.post(
+        "/org/question-bank",
+        json=_question_payload(
+            subject_code="math",
+            knowledge_node_id=str(leaf.id),
+            stem="求导数",
+            q_type="short_answer",
+            choices=None,
+        ),
+        headers=headers,
+    )
+    assert created.status_code == 201
+    assert created.json()["knowledge_node_name"] == "极限 / 导数"
+
+    listed = client.get("/org/question-bank?subject_code=math", headers=headers)
+    assert listed.status_code == 200
+    row = next(item for item in listed.json() if item["id"] == created.json()["id"])
+    assert row["knowledge_node_name"] == "极限 / 导数"
