@@ -1,4 +1,4 @@
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   createQuestion,
@@ -6,11 +6,13 @@ import {
   enrichQuestion,
   Enrichment,
   listQuestions,
+  QuestionBankItem,
   QuestionBankRole,
   recognizeQuestion,
   reviewQuestion,
   uploadQuestionImage,
 } from "@/api/questionBank";
+import MathText from "@/components/MathText";
 
 const SUBJECTS = [
   ["", "全部科目"],
@@ -29,6 +31,22 @@ const STATUSES = [
 
 const STATUS_LABELS: Record<string, string> = Object.fromEntries(STATUSES);
 const SUBJECT_LABELS: Record<string, string> = Object.fromEntries(SUBJECTS);
+const Q_TYPE_LABELS: Record<string, string> = {
+  single_choice: "单选题",
+  multi_choice: "多选题",
+  fill_blank: "填空题",
+  short_answer: "简答题",
+};
+const SOURCE_LABELS: Record<string, string> = {
+  admin_manual: "管理员录入",
+  staff_manual: "老师录入",
+  ocr_import: "图片识别",
+  ai_generated: "AI 生成",
+};
+const SCOPE_LABELS: Record<string, string> = {
+  org: "本机构",
+  global: "平台公共",
+};
 const OBJECTIVE_TYPES = new Set(["single_choice", "multi_choice"]);
 
 type Draft = {
@@ -58,11 +76,130 @@ function parseChoices(value: string) {
     .filter((choice) => choice.text);
 }
 
+function formatChoices(
+  choices: QuestionBankItem["choices"],
+): Array<{ key: string; text: string }> {
+  if (!choices?.length) return [];
+  return choices
+    .map((choice, index) => {
+      const key = String(choice.key ?? "").trim() || String.fromCharCode(65 + index);
+      const text = String(choice.text ?? "").trim();
+      if (!text) return null;
+      return { key, text };
+    })
+    .filter((choice): choice is { key: string; text: string } => choice != null);
+}
+
+function QuestionBankItemDetail({
+  item,
+  onClose,
+}: {
+  item: QuestionBankItem;
+  onClose: () => void;
+}) {
+  const choices = formatChoices(item.choices);
+
+  return (
+    <div className="fixed inset-0 z-10 flex items-start justify-center overflow-auto bg-black/40 p-8">
+      <div className="w-full max-w-2xl rounded bg-white p-6 shadow-xl">
+        <div className="mb-4 flex items-start justify-between gap-4">
+          <h2 className="text-lg font-semibold">题目详情</h2>
+          <button type="button" onClick={onClose} className="text-sm text-slate-600 underline">
+            关闭
+          </button>
+        </div>
+
+        <dl className="space-y-4 text-sm">
+          <div>
+            <dt className="mb-1 text-slate-600">题干</dt>
+            <dd className="rounded bg-slate-50 p-3">
+              <MathText text={item.stem} />
+            </dd>
+          </div>
+
+          {choices.length > 0 && (
+            <div>
+              <dt className="mb-1 text-slate-600">选项</dt>
+              <dd className="space-y-2 rounded bg-slate-50 p-3">
+                {choices.map((choice) => (
+                  <div key={choice.key}>
+                    <span className="font-medium">{choice.key}.</span>{" "}
+                    <MathText text={choice.text} />
+                  </div>
+                ))}
+              </dd>
+            </div>
+          )}
+
+          {item.answer_key ? (
+            <div>
+              <dt className="mb-1 text-slate-600">答案</dt>
+              <dd className="rounded bg-slate-50 p-3">
+                <MathText text={item.answer_key} />
+              </dd>
+            </div>
+          ) : null}
+
+          {item.analysis_text ? (
+            <div>
+              <dt className="mb-1 text-slate-600">解析</dt>
+              <dd className="rounded bg-slate-50 p-3">
+                <MathText text={item.analysis_text} />
+              </dd>
+            </div>
+          ) : null}
+
+          <div className="grid grid-cols-2 gap-3 border-t pt-4">
+            <div>
+              <dt className="text-slate-600">题型</dt>
+              <dd>{Q_TYPE_LABELS[item.q_type] ?? item.q_type}</dd>
+            </div>
+            <div>
+              <dt className="text-slate-600">科目</dt>
+              <dd>{SUBJECT_LABELS[item.subject_code] ?? item.subject_code}</dd>
+            </div>
+            <div>
+              <dt className="text-slate-600">难度</dt>
+              <dd>{item.difficulty ?? "—"}</dd>
+            </div>
+            <div>
+              <dt className="text-slate-600">状态</dt>
+              <dd>{STATUS_LABELS[item.status] ?? item.status}</dd>
+            </div>
+            <div>
+              <dt className="text-slate-600">归属</dt>
+              <dd>{SCOPE_LABELS[item.scope] ?? item.scope}</dd>
+            </div>
+            <div>
+              <dt className="text-slate-600">来源</dt>
+              <dd>{SOURCE_LABELS[item.source_type] ?? item.source_type}</dd>
+            </div>
+            {item.knowledge_node_id ? (
+              <div className="col-span-2">
+                <dt className="text-slate-600">知识点</dt>
+                <dd>{item.knowledge_node_name ?? "（未标注知识点）"}</dd>
+              </div>
+            ) : null}
+            <div className="col-span-2">
+              <dt className="text-slate-600">入库时间</dt>
+              <dd>{new Date(item.created_at).toLocaleString()}</dd>
+            </div>
+          </div>
+        </dl>
+      </div>
+    </div>
+  );
+}
+
 export default function QuestionBankPage({ role }: { role: QuestionBankRole }) {
   const queryClient = useQueryClient();
   const [subject, setSubject] = useState("");
   const [status, setStatus] = useState("");
   const [pendingOnly, setPendingOnly] = useState(false);
+  const [offset, setOffset] = useState(0);
+  const limit = 20;
+  const [allItems, setAllItems] = useState<QuestionBankItem[]>([]);
+  const [hasMore, setHasMore] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
   const [createMode, setCreateMode] = useState<"manual" | "ocr">("manual");
   const [ocrFile, setOcrFile] = useState<File | null>(null);
@@ -70,12 +207,38 @@ export default function QuestionBankPage({ role }: { role: QuestionBankRole }) {
   const [draft, setDraft] = useState<Draft>(EMPTY_DRAFT);
   const [confirmation, setConfirmation] = useState<Enrichment | null>(null);
   const [scope, setScope] = useState<"org" | "global">("org");
+  const [detailItem, setDetailItem] = useState<QuestionBankItem | null>(null);
 
-  const filters = { subject_code: subject, status, pending: pendingOnly };
+  const filters = { subject_code: subject, status, pending: pendingOnly, limit, offset };
   const questions = useQuery({
     queryKey: ["question-bank", filters],
     queryFn: () => listQuestions(filters),
   });
+
+  useEffect(() => {
+    setOffset(0);
+    setAllItems([]);
+    setHasMore(true);
+  }, [subject, status, pendingOnly]);
+
+  useEffect(() => {
+    if (!questions.data) return;
+    setAllItems((prev) => {
+      const existing = new Set(prev.map((item) => item.id));
+      const next = [...prev];
+      for (const item of questions.data) {
+        if (!existing.has(item.id)) next.push(item);
+      }
+      return next;
+    });
+    setHasMore(questions.data.length === limit);
+  }, [questions.data, limit]);
+
+  const resetList = () => {
+    setOffset(0);
+    setAllItems([]);
+    setHasMore(true);
+  };
 
   const enrichMutation = useMutation({
     mutationFn: enrichQuestion,
@@ -115,6 +278,7 @@ export default function QuestionBankPage({ role }: { role: QuestionBankRole }) {
       setCreateMode("manual");
       setOcrFile(null);
       setSourceImageAssetId(null);
+      resetList();
       queryClient.invalidateQueries({ queryKey: ["question-bank"] });
     },
   });
@@ -126,7 +290,10 @@ export default function QuestionBankPage({ role }: { role: QuestionBankRole }) {
       id: string;
       action: "approve" | "reject" | "disable";
     }) => reviewQuestion(id, action),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["question-bank"] }),
+    onSuccess: () => {
+      resetList();
+      queryClient.invalidateQueries({ queryKey: ["question-bank"] });
+    },
   });
 
   const questionDraft = () => ({
@@ -185,6 +352,10 @@ export default function QuestionBankPage({ role }: { role: QuestionBankRole }) {
     enrichMutation.reset();
   };
 
+  const draftChoices = OBJECTIVE_TYPES.has(draft.qType)
+    ? parseChoices(draft.choicesText)
+    : [];
+
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-between">
@@ -235,16 +406,18 @@ export default function QuestionBankPage({ role }: { role: QuestionBankRole }) {
       </section>
 
       <section className="overflow-hidden rounded bg-white shadow">
-        {questions.isLoading && <p className="p-4 text-slate-500">加载中…</p>}
+        {questions.isLoading && allItems.length === 0 && (
+          <p className="p-4 text-slate-500">加载中…</p>
+        )}
         {questions.error && (
           <p role="alert" className="p-4 text-red-600">
             {(questions.error as Error).message}
           </p>
         )}
-        {questions.data?.length === 0 && (
+        {!questions.isLoading && !questions.error && allItems.length === 0 && (
           <p className="p-6 text-center text-slate-500">暂无题目</p>
         )}
-        {!!questions.data?.length && (
+        {!!allItems.length && (
           <table className="w-full text-sm">
             <thead className="bg-slate-100 text-left">
               <tr>
@@ -256,11 +429,13 @@ export default function QuestionBankPage({ role }: { role: QuestionBankRole }) {
               </tr>
             </thead>
             <tbody>
-              {questions.data.map((item) => {
+              {allItems.map((item) => {
                 const canMutate = role === "org_admin" || item.scope === "org";
                 return (
                   <tr key={item.id} className="border-t align-top">
-                    <td className="max-w-xl px-4 py-3">{item.stem}</td>
+                    <td className="max-w-xl px-4 py-3">
+                      <MathText text={item.stem} />
+                    </td>
                     <td className="px-4 py-3">
                       {SUBJECT_LABELS[item.subject_code] ?? item.subject_code}
                     </td>
@@ -269,6 +444,13 @@ export default function QuestionBankPage({ role }: { role: QuestionBankRole }) {
                       {STATUS_LABELS[item.status] ?? item.status}
                     </td>
                     <td className="space-x-2 whitespace-nowrap px-4 py-3">
+                      <button
+                        type="button"
+                        onClick={() => setDetailItem(item)}
+                        className="text-slate-700 underline"
+                      >
+                        查看
+                      </button>
                       {item.status === "pending_review" && canMutate && (
                         <>
                           <button
@@ -306,12 +488,32 @@ export default function QuestionBankPage({ role }: { role: QuestionBankRole }) {
             </tbody>
           </table>
         )}
+        {!!allItems.length && (
+          <div className="flex justify-center border-t p-4">
+            {hasMore ? (
+              <button
+                type="button"
+                className="rounded border bg-white px-3 py-2 text-sm hover:bg-slate-50 disabled:opacity-50"
+                onClick={() => setOffset((current) => current + limit)}
+                disabled={questions.isLoading}
+              >
+                {questions.isLoading ? "加载中…" : "加载更多"}
+              </button>
+            ) : (
+              <span className="text-sm text-slate-500">没有更多了</span>
+            )}
+          </div>
+        )}
         {reviewMutation.error && (
           <p role="alert" className="border-t p-3 text-sm text-red-600">
             {(reviewMutation.error as Error).message}
           </p>
         )}
       </section>
+
+      {detailItem ? (
+        <QuestionBankItemDetail item={detailItem} onClose={() => setDetailItem(null)} />
+      ) : null}
 
       {showCreate && (
         <div className="fixed inset-0 z-10 flex items-start justify-center overflow-auto bg-black/40 p-8">
@@ -392,20 +594,39 @@ export default function QuestionBankPage({ role }: { role: QuestionBankRole }) {
                     className="w-full rounded border px-3 py-2"
                   />
                 </label>
+                {draft.stem.trim() ? (
+                  <div className="rounded border border-dashed bg-slate-50 p-3 text-sm">
+                    <div className="mb-1 text-xs text-slate-500">预览</div>
+                    <MathText text={draft.stem} />
+                  </div>
+                ) : null}
                 {OBJECTIVE_TYPES.has(draft.qType) && (
-                  <label className="block space-y-1">
-                    <span>选项（每行一个）</span>
-                    <textarea
-                      value={draft.choicesText}
-                      onChange={(event) =>
-                        setDraft({ ...draft, choicesText: event.target.value })
-                      }
-                      placeholder={"A. 选项一\nB. 选项二"}
-                      required
-                      rows={5}
-                      className="w-full rounded border px-3 py-2"
-                    />
-                  </label>
+                  <>
+                    <label className="block space-y-1">
+                      <span>选项（每行一个）</span>
+                      <textarea
+                        value={draft.choicesText}
+                        onChange={(event) =>
+                          setDraft({ ...draft, choicesText: event.target.value })
+                        }
+                        placeholder={"A. 选项一\nB. 选项二"}
+                        required
+                        rows={5}
+                        className="w-full rounded border px-3 py-2"
+                      />
+                    </label>
+                    {draftChoices.length > 0 ? (
+                      <div className="rounded border border-dashed bg-slate-50 p-3 text-sm space-y-2">
+                        <div className="text-xs text-slate-500">选项预览</div>
+                        {draftChoices.map((choice) => (
+                          <div key={choice.key}>
+                            <span className="font-medium">{choice.key}.</span>{" "}
+                            <MathText text={choice.text} />
+                          </div>
+                        ))}
+                      </div>
+                    ) : null}
+                  </>
                 )}
                 <label className="block space-y-1">
                   <span>{OBJECTIVE_TYPES.has(draft.qType) ? "答案" : "参考答案"}</span>
@@ -418,6 +639,12 @@ export default function QuestionBankPage({ role }: { role: QuestionBankRole }) {
                     className="w-full rounded border px-3 py-2"
                   />
                 </label>
+                {draft.answerKey.trim() ? (
+                  <div className="rounded border border-dashed bg-slate-50 p-3 text-sm">
+                    <div className="mb-1 text-xs text-slate-500">答案预览</div>
+                    <MathText text={draft.answerKey} />
+                  </div>
+                ) : null}
                 <div className="flex justify-end gap-3">
                   <button type="button" onClick={closeCreate} className="px-4 py-2">
                     取消
@@ -439,7 +666,29 @@ export default function QuestionBankPage({ role }: { role: QuestionBankRole }) {
             ) : (
               <form onSubmit={onCreate} className="space-y-4">
                 <h2 className="text-lg font-semibold">确认题目信息</h2>
-                <p className="rounded bg-slate-50 p-3 text-sm">{draft.stem}</p>
+                <div className="space-y-3 rounded bg-slate-50 p-3 text-sm">
+                  <div>
+                    <div className="mb-1 text-xs text-slate-500">题干</div>
+                    <MathText text={draft.stem} />
+                  </div>
+                  {draftChoices.length > 0 && (
+                      <div className="space-y-2 border-t pt-3">
+                        <div className="text-xs text-slate-500">选项</div>
+                        {draftChoices.map((choice) => (
+                          <div key={choice.key}>
+                            <span className="font-medium">{choice.key}.</span>{" "}
+                            <MathText text={choice.text} />
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  {draft.answerKey.trim() ? (
+                    <div className="border-t pt-3">
+                      <div className="mb-1 text-xs text-slate-500">答案</div>
+                      <MathText text={draft.answerKey} />
+                    </div>
+                  ) : null}
+                </div>
                 {role === "org_admin" && (
                   <label className="block space-y-1">
                     <span>归属</span>
@@ -473,17 +722,16 @@ export default function QuestionBankPage({ role }: { role: QuestionBankRole }) {
                   </select>
                 </label>
                 <label className="block space-y-1">
-                  <span>知识点 ID（可选）</span>
-                  <input
-                    value={confirmation.knowledge_node_id ?? ""}
-                    onChange={(event) =>
-                      setConfirmation({
-                        ...confirmation,
-                        knowledge_node_id: event.target.value || null,
-                      })
-                    }
-                    className="w-full rounded border px-3 py-2"
-                  />
+                  <span>知识点</span>
+                  {confirmation.knowledge_node_name ? (
+                    <p className="rounded border bg-slate-50 px-3 py-2 text-sm">
+                      {confirmation.knowledge_node_name}
+                    </p>
+                  ) : (
+                    <p className="rounded border bg-slate-50 px-3 py-2 text-sm text-slate-500">
+                      （未标注知识点）
+                    </p>
+                  )}
                 </label>
                 <label className="block space-y-1">
                   <span>难度（1-5）</span>

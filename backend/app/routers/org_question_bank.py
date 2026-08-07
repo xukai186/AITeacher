@@ -22,6 +22,7 @@ from app.services.media_assets import MediaAssetService, UploadTooLargeError
 from app.services.question_bank import QuestionBankService
 from app.services.question_enrichment import QuestionEnrichmentService
 from app.services.question_ocr import QuestionOCRService
+from app.services.roadmap_resolve import resolve_syllabus_nodes
 
 router = APIRouter(prefix="/org/question-bank", tags=["org-question-bank"])
 staff_or_admin = require_roles(UserRole.org_admin, UserRole.org_staff)
@@ -85,13 +86,30 @@ def extract_question(
     )
 
 
-def _item_out(item: QuestionBankItem) -> QuestionBankItemOut:
+def _node_label(resolved: dict | None) -> str | None:
+    if resolved is None:
+        return None
+    parent_name = resolved.get("parent_name")
+    name = resolved.get("name")
+    if not name:
+        return None
+    if parent_name:
+        return f"{parent_name} / {name}"
+    return str(name)
+
+
+def _item_out(
+    item: QuestionBankItem,
+    *,
+    knowledge_node_name: str | None = None,
+) -> QuestionBankItemOut:
     return QuestionBankItemOut(
         id=item.id,
         scope=item.scope,
         org_id=item.org_id,
         subject_code=item.subject_code,
         knowledge_node_id=item.knowledge_node_id,
+        knowledge_node_name=knowledge_node_name,
         q_type=item.q_type,
         stem=item.stem,
         choices=item.choices_json,
@@ -107,6 +125,26 @@ def _item_out(item: QuestionBankItem) -> QuestionBankItemOut:
         created_at=item.created_at,
         updated_at=item.updated_at,
     )
+
+
+def _items_out(db: Session, items: list[QuestionBankItem]) -> list[QuestionBankItemOut]:
+    node_ids = [str(item.knowledge_node_id) for item in items if item.knowledge_node_id]
+    resolved = {
+        row["id"]: row for row in resolve_syllabus_nodes(db, node_ids)
+    }
+    return [
+        _item_out(
+            item,
+            knowledge_node_name=_node_label(
+                resolved.get(str(item.knowledge_node_id)) if item.knowledge_node_id else None
+            ),
+        )
+        for item in items
+    ]
+
+
+def _single_item_out(db: Session, item: QuestionBankItem) -> QuestionBankItemOut:
+    return _items_out(db, [item])[0]
 
 
 @router.post("/enrich", response_model=QuestionEnrichmentOut)
@@ -126,6 +164,14 @@ def enrich_question(
     return QuestionEnrichmentOut(
         subject_code=suggestion.subject_code,
         knowledge_node_id=suggestion.knowledge_node_id,
+        knowledge_node_name=_node_label(
+            resolve_syllabus_nodes(
+                db,
+                [str(suggestion.knowledge_node_id)],
+            )[0]
+            if suggestion.knowledge_node_id
+            else None
+        ),
         difficulty=suggestion.difficulty,
         analysis_text=suggestion.analysis_text,
         q_type=suggestion.q_type,
@@ -158,7 +204,7 @@ def create_question(
     )
     db.commit()
     db.refresh(item)
-    return _item_out(item)
+    return _single_item_out(db, item)
 
 
 @router.get("", response_model=list[QuestionBankItemOut])
@@ -166,6 +212,8 @@ def list_questions(
     status_filter: str | None = Query(default=None, alias="status"),
     subject_code: str | None = None,
     pending: bool = False,
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
     db: Session = Depends(get_db),
     actor: User = Depends(staff_or_admin),
 ) -> list[QuestionBankItemOut]:
@@ -175,8 +223,10 @@ def list_questions(
         status=status_filter,
         subject_code=subject_code,
         pending_only=pending,
+        limit=limit,
+        offset=offset,
     )
-    return [_item_out(item) for item in items]
+    return _items_out(db, items)
 
 
 def _review(
@@ -189,7 +239,7 @@ def _review(
     item = getattr(service, action)(db, actor=actor, item_id=item_id)
     db.commit()
     db.refresh(item)
-    return _item_out(item)
+    return _single_item_out(db, item)
 
 
 @router.post("/{item_id}/approve", response_model=QuestionBankItemOut)

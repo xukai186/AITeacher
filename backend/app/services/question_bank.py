@@ -144,6 +144,8 @@ class QuestionBankService:
         status: str | None = None,
         subject_code: str | None = None,
         pending_only: bool = False,
+        limit: int = 50,
+        offset: int = 0,
     ) -> list[QuestionBankItem]:
         self._require_staff(viewer)
         if viewer.role == UserRole.org_admin:
@@ -162,9 +164,13 @@ class QuestionBankService:
         if subject_code is not None:
             stmt = stmt.where(QuestionBankItem.subject_code == subject_code)
 
-        stmt = stmt.order_by(
-            QuestionBankItem.created_at.desc(),
-            QuestionBankItem.id.desc(),
+        stmt = (
+            stmt.order_by(
+                QuestionBankItem.created_at.desc(),
+                QuestionBankItem.id.desc(),
+            )
+            .limit(limit)
+            .offset(offset)
         )
         return list(db.execute(stmt).scalars().all())
 

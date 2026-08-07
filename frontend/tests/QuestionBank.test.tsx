@@ -176,4 +176,186 @@ describe("Question bank", () => {
       ],
     });
   });
+
+  it("loads more questions with limit and offset", async () => {
+    const page1 = Array.from({ length: 20 }, (_, index) => ({
+      id: `q-${index + 1}`,
+      scope: "org" as const,
+      org_id: "org-1",
+      subject_code: "english",
+      knowledge_node_id: null,
+      q_type: "single_choice",
+      stem: `Question ${index + 1}`,
+      choices: [{ key: "A", text: "One" }],
+      answer_key: "A",
+      analysis_text: null,
+      difficulty: 2,
+      source_type: "staff_manual",
+      status: "active" as const,
+      created_at: "2026-01-01T00:00:00Z",
+    }));
+    const page2 = [
+      {
+        id: "q-21",
+        scope: "org" as const,
+        org_id: "org-1",
+        subject_code: "english",
+        knowledge_node_id: null,
+        q_type: "single_choice",
+        stem: "Question 21",
+        choices: [{ key: "A", text: "One" }],
+        answer_key: "A",
+        analysis_text: null,
+        difficulty: 2,
+        source_type: "staff_manual",
+        status: "active" as const,
+        created_at: "2026-01-01T00:00:00Z",
+      },
+    ];
+
+    const fetchMock = vi.fn(async (input: RequestInfo) => {
+      const url = String(input);
+      if (url.includes("/org/question-bank") && !url.includes("/enrich")) {
+        const parsed = new URL(url, "http://localhost");
+        const offset = Number(parsed.searchParams.get("offset") ?? "0");
+        return new Response(JSON.stringify(offset === 0 ? page1 : page2), {
+          status: 200,
+        });
+      }
+      return new Response("not found", { status: 404 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderPage();
+    await waitFor(() => expect(screen.getByText("Question 1")).toBeTruthy());
+    expect(screen.queryByText("Question 21")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "加载更多" }));
+
+    await waitFor(() => expect(screen.getByText("Question 21")).toBeTruthy());
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining("limit=20"),
+      expect.anything(),
+    );
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining("offset=20"),
+      expect.anything(),
+    );
+  });
+
+  it("previews choice math while creating a question", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo) => {
+      const url = String(input);
+      if (url.includes("/org/question-bank") && !url.includes("/enrich")) {
+        return new Response(JSON.stringify([]), { status: 200 });
+      }
+      return new Response("not found", { status: 404 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderPage();
+    fireEvent.click(screen.getByRole("button", { name: "新建题目" }));
+    fireEvent.change(screen.getByLabelText("题型"), {
+      target: { value: "single_choice" },
+    });
+    fireEvent.change(screen.getByLabelText("选项（每行一个）"), {
+      target: {
+        value: "A. $\\frac{1}{2}$\nB. $\\frac{1}{3}$",
+      },
+    });
+
+    await waitFor(() =>
+      expect(screen.getByText("选项预览")).toBeTruthy(),
+    );
+    expect(document.querySelectorAll(".katex").length).toBeGreaterThan(0);
+  });
+
+  it("renders math stems in the question list", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo) => {
+      const url = String(input);
+      if (url.includes("/org/question-bank") && !url.includes("/enrich")) {
+        return new Response(
+          JSON.stringify([
+            {
+              id: "q-math",
+              scope: "org",
+              org_id: "org-1",
+              subject_code: "math",
+              knowledge_node_id: null,
+              q_type: "short_answer",
+              stem: "$F(x,y,z) = z + \\ln z - \\int_{y}^{x}e^{-t^2}dt = 0$",
+              choices: null,
+              answer_key: "0",
+              analysis_text: null,
+              difficulty: 3,
+              source_type: "ocr_import",
+              status: "pending_review",
+              created_at: "2026-01-01T00:00:00Z",
+            },
+          ]),
+          { status: 200 },
+        );
+      }
+      return new Response("not found", { status: 404 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderPage();
+    await waitFor(() =>
+      expect(document.querySelector(".katex")).toBeTruthy(),
+    );
+    expect(document.body.textContent).not.toContain("$F(x,y,z)");
+  });
+
+  it("opens question detail with choices answer and analysis", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo) => {
+      const url = String(input);
+      if (url.includes("/org/question-bank") && !url.includes("/enrich")) {
+        return new Response(
+          JSON.stringify([
+            {
+              id: "q-detail",
+              scope: "org",
+              org_id: "org-1",
+              subject_code: "math",
+              knowledge_node_id: "node-1",
+              knowledge_node_name: "极限 / 导数",
+              q_type: "single_choice",
+              stem: "求 $x$ 的值",
+              choices: [
+                { key: "A", text: "$1$" },
+                { key: "B", text: "$2$" },
+              ],
+              answer_key: "A",
+              analysis_text: "因为 $1+1=2$",
+              difficulty: 2,
+              source_type: "staff_manual",
+              status: "active",
+              created_at: "2026-01-01T00:00:00Z",
+            },
+          ]),
+          { status: 200 },
+        );
+      }
+      return new Response("not found", { status: 404 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderPage();
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "查看" })).toBeTruthy(),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "查看" }));
+
+    await waitFor(() =>
+      expect(screen.getByRole("heading", { name: "题目详情" })).toBeTruthy(),
+    );
+    expect(screen.getByText("选项")).toBeTruthy();
+    expect(screen.getByText("答案")).toBeTruthy();
+    expect(screen.getByText("解析")).toBeTruthy();
+    expect(screen.getByText("单选题")).toBeTruthy();
+    expect(screen.getByText("极限 / 导数")).toBeTruthy();
+    expect(document.querySelectorAll(".katex").length).toBeGreaterThan(0);
+  });
 });

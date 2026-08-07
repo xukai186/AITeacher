@@ -9,6 +9,7 @@ export type QuestionBankItem = {
   org_id: string | null;
   subject_code: string;
   knowledge_node_id: string | null;
+  knowledge_node_name?: string | null;
   q_type: string;
   stem: string;
   choices: Array<{ key?: string; text?: string; [key: string]: unknown }> | null;
@@ -30,6 +31,7 @@ export type QuestionDraft = {
 export type Enrichment = {
   subject_code: string;
   knowledge_node_id: string | null;
+  knowledge_node_name?: string | null;
   difficulty: number;
   analysis_text: string | null;
   q_type: string | null;
@@ -54,6 +56,8 @@ export type QuestionFilters = {
   subject_code?: string;
   status?: string;
   pending?: boolean;
+  limit?: number;
+  offset?: number;
 };
 
 export function listQuestions(filters: QuestionFilters) {
@@ -61,6 +65,8 @@ export function listQuestions(filters: QuestionFilters) {
   if (filters.subject_code) params.set("subject_code", filters.subject_code);
   if (filters.status) params.set("status", filters.status);
   if (filters.pending) params.set("pending", "true");
+  if (filters.limit != null) params.set("limit", String(filters.limit));
+  if (filters.offset != null) params.set("offset", String(filters.offset));
   const query = params.toString();
   return api<QuestionBankItem[]>(`/org/question-bank${query ? `?${query}` : ""}`);
 }
