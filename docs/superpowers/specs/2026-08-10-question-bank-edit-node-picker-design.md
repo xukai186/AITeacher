@@ -1,7 +1,7 @@
 # 题库编辑与知识点选择器 — 产品设计规格
 
 **日期：** 2026-08-10  
-**状态：** 待实现  
+**状态：** 已实现  
 **依赖：** 全局题库 P1–P3（`QuestionBankItem`、admin/staff 题库页、审核流）、大纲 `syllabus_nodes`  
 **关联：** `docs/superpowers/specs/2026-08-04-global-question-bank-design.md`
 
