@@ -3,6 +3,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router-dom";
 import QuestionBankPage from "../src/components/questionBank/QuestionBankPage";
+import KnowledgeNodeSelect from "../src/components/questionBank/KnowledgeNodeSelect";
 import { setToken } from "../src/api/client";
 
 function renderPage() {
@@ -28,6 +29,9 @@ describe("Question bank", () => {
   it("enriches a new question, confirms suggestions, then creates it", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo, init?: RequestInit) => {
       const url = String(input);
+      if (url.includes("/org/question-bank/knowledge-nodes")) {
+        return new Response(JSON.stringify([]), { status: 200 });
+      }
       if (url.endsWith("/org/question-bank/enrich")) {
         return new Response(
           JSON.stringify({
@@ -102,6 +106,9 @@ describe("Question bank", () => {
   it("sends multi_choice with choice keys on create", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo, init?: RequestInit) => {
       const url = String(input);
+      if (url.includes("/org/question-bank/knowledge-nodes")) {
+        return new Response(JSON.stringify([]), { status: 200 });
+      }
       if (url.endsWith("/org/question-bank/enrich")) {
         return new Response(
           JSON.stringify({
@@ -357,5 +364,174 @@ describe("Question bank", () => {
     expect(screen.getByText("单选题")).toBeTruthy();
     expect(screen.getByText("极限 / 导数")).toBeTruthy();
     expect(document.querySelectorAll(".katex").length).toBeGreaterThan(0);
+  });
+
+  it("loads knowledge nodes for selected subject", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo) => {
+      const url = String(input);
+      if (url.includes("/org/question-bank/knowledge-nodes")) {
+        return new Response(
+          JSON.stringify([
+            { id: "n1", name: "多元函数", parent_name: "高数" },
+          ]),
+          { status: 200 },
+        );
+      }
+      return new Response("not found", { status: 404 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+        <KnowledgeNodeSelect subjectCode="math" value={null} onChange={() => {}} />
+      </QueryClientProvider>,
+    );
+
+    await waitFor(() =>
+      expect(screen.getByRole("option", { name: "高数 / 多元函数" })).toBeTruthy(),
+    );
+  });
+
+  it("edits a pending question via PATCH", async () => {
+    const item = {
+      id: "q-edit",
+      scope: "org" as const,
+      org_id: "org-1",
+      subject_code: "math",
+      knowledge_node_id: null,
+      q_type: "short_answer",
+      stem: "Original stem",
+      choices: null,
+      answer_key: "1",
+      analysis_text: null,
+      difficulty: 2,
+      source_type: "ocr_import",
+      status: "pending_review" as const,
+      created_at: "2026-01-01T00:00:00Z",
+    };
+
+    const fetchMock = vi.fn(async (input: RequestInfo, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes("/org/question-bank/knowledge-nodes")) {
+        return new Response(JSON.stringify([]), { status: 200 });
+      }
+      if (url.includes("/org/question-bank/q-edit") && init?.method === "PATCH") {
+        return new Response(
+          JSON.stringify({ ...item, stem: "Updated stem" }),
+          { status: 200 },
+        );
+      }
+      if (url.includes("/org/question-bank") && !url.includes("/enrich")) {
+        return new Response(JSON.stringify([item]), { status: 200 });
+      }
+      return new Response("not found", { status: 404 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderPage();
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "编辑" })).toBeTruthy(),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "编辑" }));
+    await waitFor(() =>
+      expect(screen.getByRole("heading", { name: "编辑题目" })).toBeTruthy(),
+    );
+
+    fireEvent.change(screen.getByLabelText("题干"), {
+      target: { value: "Updated stem" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+
+    await waitFor(() => {
+      const patchCall = fetchMock.mock.calls.find(
+        ([url, init]) =>
+          String(url).includes("/org/question-bank/q-edit") && init?.method === "PATCH",
+      );
+      expect(patchCall).toBeTruthy();
+    });
+    const patchCall = fetchMock.mock.calls.find(
+      ([url, init]) =>
+        String(url).includes("/org/question-bank/q-edit") && init?.method === "PATCH",
+    );
+    expect(JSON.parse(String(patchCall![1]?.body))).toMatchObject({
+      stem: "Updated stem",
+    });
+  });
+
+  it("create confirm can pick a knowledge node before submit", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes("/org/question-bank/knowledge-nodes")) {
+        return new Response(
+          JSON.stringify([
+            { id: "n1", name: "多元函数", parent_name: "高数" },
+          ]),
+          { status: 200 },
+        );
+      }
+      if (url.endsWith("/org/question-bank/enrich")) {
+        return new Response(
+          JSON.stringify({
+            subject_code: "math",
+            knowledge_node_id: null,
+            difficulty: 3,
+            analysis_text: "解析",
+            q_type: "short_answer",
+          }),
+          { status: 200 },
+        );
+      }
+      if (url.endsWith("/org/question-bank") && init?.method === "POST") {
+        return new Response(
+          JSON.stringify({
+            id: "q1",
+            stem: "题干",
+            subject_code: "math",
+            q_type: "short_answer",
+            status: "active",
+          }),
+          { status: 201 },
+        );
+      }
+      if (url.includes("/org/question-bank")) {
+        return new Response(JSON.stringify([]), { status: 200 });
+      }
+      return new Response("not found", { status: 404 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderPage();
+    fireEvent.click(screen.getByRole("button", { name: "新建题目" }));
+    fireEvent.change(screen.getByLabelText("题干"), { target: { value: "题干" } });
+    fireEvent.change(screen.getByLabelText("参考答案"), { target: { value: "1" } });
+    fireEvent.click(screen.getByRole("button", { name: "智能补全" }));
+
+    await waitFor(() =>
+      expect(screen.getByRole("heading", { name: "确认题目信息" })).toBeTruthy(),
+    );
+    await waitFor(() =>
+      expect(screen.getByRole("option", { name: "高数 / 多元函数" })).toBeTruthy(),
+    );
+
+    fireEvent.change(screen.getByRole("combobox", { name: "知识点" }), {
+      target: { value: "n1" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "确认入库" }));
+
+    await waitFor(() => {
+      const createCall = fetchMock.mock.calls.find(
+        ([url, init]) =>
+          String(url).endsWith("/org/question-bank") && init?.method === "POST",
+      );
+      expect(createCall).toBeTruthy();
+    });
+    const createCall = fetchMock.mock.calls.find(
+      ([url, init]) =>
+        String(url).endsWith("/org/question-bank") && init?.method === "POST",
+    );
+    expect(JSON.parse(String(createCall![1]?.body))).toMatchObject({
+      knowledge_node_id: "n1",
+    });
   });
 });

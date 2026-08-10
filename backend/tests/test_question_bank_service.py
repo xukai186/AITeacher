@@ -3,7 +3,7 @@ import uuid
 import pytest
 from fastapi import HTTPException
 
-from app.models import UserRole
+from app.models import SyllabusNode, UserRole
 from app.schemas.question_bank import QuestionBankCreate
 from app.services.question_bank import QuestionBankService
 from tests.factories import make_org, make_user
@@ -291,3 +291,65 @@ def test_list_supports_pagination(db_session):
     assert {item.id for item in page1}.issubset(created_ids)
     assert {item.id for item in page2}.issubset(created_ids)
     assert {item.id for item in page1}.isdisjoint({item.id for item in page2})
+
+
+def test_list_leaf_knowledge_nodes_returns_only_leaves(db_session):
+    parent = SyllabusNode(subject_code="math", name="高数", parent_id=None, weight=1)
+    db_session.add(parent)
+    db_session.flush()
+    leaf = SyllabusNode(subject_code="math", name="多元函数", parent_id=parent.id, weight=1)
+    mid = SyllabusNode(subject_code="math", name="章节", parent_id=None, weight=1)
+    db_session.add_all([leaf, mid])
+    db_session.flush()
+    child = SyllabusNode(subject_code="math", name="小节", parent_id=mid.id, weight=1)
+    db_session.add(child)
+    db_session.flush()
+
+    svc = QuestionBankService()
+    leaves = svc.list_leaf_knowledge_nodes(db_session, subject_code="math")
+    ids = {n.id for n in leaves}
+    assert leaf.id in ids
+    assert child.id in ids
+    assert mid.id not in ids
+    assert parent.id not in ids
+
+
+def test_update_pending_review_keeps_status(db_session):
+    admin, org = _admin(db_session)
+    svc = QuestionBankService()
+    item = _create(svc, db_session, admin, source_type="ocr_import")
+    db_session.flush()
+
+    updated = svc.update(
+        db_session,
+        actor=admin,
+        item_id=item.id,
+        stem="Updated stem",
+    )
+    assert updated.status == "pending_review"
+    assert updated.stem == "Updated stem"
+
+
+def test_update_rejected_returns_to_pending_review(db_session):
+    admin, org = _admin(db_session)
+    svc = QuestionBankService()
+    item = _create(svc, db_session, admin, source_type="ocr_import")
+    svc.reject(db_session, actor=admin, item_id=item.id)
+    db_session.flush()
+    assert item.reviewed_by is not None
+
+    updated = svc.update(db_session, actor=admin, item_id=item.id, stem="Fix it")
+    assert updated.status == "pending_review"
+    assert updated.reviewed_by is None
+    assert updated.reviewed_at is None
+
+
+def test_update_active_is_rejected(db_session):
+    admin, org = _admin(db_session)
+    svc = QuestionBankService()
+    item = _create(svc, db_session, admin)
+    db_session.flush()
+
+    with pytest.raises(HTTPException) as exc:
+        svc.update(db_session, actor=admin, item_id=item.id, stem="Nope")
+    assert exc.value.status_code == 409

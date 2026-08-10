@@ -3,23 +3,26 @@ from __future__ import annotations
 import uuid
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.auth.permissions import require_roles
 from app.database import get_db
-from app.models import QuestionBankItem, User, UserRole
+from app.models import QuestionBankItem, SyllabusNode, User, UserRole
 from app.schemas.question_bank import (
+    KnowledgeNodeOptionOut,
     MediaAssetOut,
     QuestionBankCreate,
     QuestionBankCreateRequest,
     QuestionBankItemOut,
+    QuestionBankUpdateRequest,
     QuestionEnrichmentOut,
     QuestionEnrichmentRequest,
     QuestionOCROut,
     QuestionOCRRequest,
 )
 from app.services.media_assets import MediaAssetService, UploadTooLargeError
-from app.services.question_bank import QuestionBankService
+from app.services.question_bank import QuestionBankService, _UNSET
 from app.services.question_enrichment import QuestionEnrichmentService
 from app.services.question_ocr import QuestionOCRService
 from app.services.roadmap_resolve import resolve_syllabus_nodes
@@ -227,6 +230,61 @@ def list_questions(
         offset=offset,
     )
     return _items_out(db, items)
+
+
+@router.get("/knowledge-nodes", response_model=list[KnowledgeNodeOptionOut])
+def list_knowledge_nodes(
+    subject_code: str,
+    db: Session = Depends(get_db),
+    actor: User = Depends(staff_or_admin),
+) -> list[KnowledgeNodeOptionOut]:
+    nodes = QuestionBankService().list_leaf_knowledge_nodes(db, subject_code=subject_code)
+    parent_ids = {n.parent_id for n in nodes if n.parent_id}
+    parents: dict = {}
+    if parent_ids:
+        parents = {
+            p.id: p
+            for p in db.execute(
+                select(SyllabusNode).where(SyllabusNode.id.in_(parent_ids))
+            ).scalars()
+        }
+    out: list[KnowledgeNodeOptionOut] = []
+    for node in nodes:
+        parent = parents.get(node.parent_id) if node.parent_id else None
+        out.append(
+            KnowledgeNodeOptionOut(
+                id=node.id,
+                name=node.name,
+                parent_name=parent.name if parent else None,
+            )
+        )
+    return out
+
+
+@router.patch("/{item_id}", response_model=QuestionBankItemOut)
+def update_question(
+    item_id: uuid.UUID,
+    payload: QuestionBankUpdateRequest,
+    db: Session = Depends(get_db),
+    actor: User = Depends(staff_or_admin),
+) -> QuestionBankItemOut:
+    data = payload.model_dump(exclude_unset=True)
+    item = QuestionBankService().update(
+        db,
+        actor=actor,
+        item_id=item_id,
+        stem=data.get("stem"),
+        q_type=data.get("q_type"),
+        choices_json=data.get("choices"),
+        answer_key=data.get("answer_key"),
+        subject_code=data.get("subject_code"),
+        knowledge_node_id=data["knowledge_node_id"] if "knowledge_node_id" in data else _UNSET,
+        difficulty=data.get("difficulty"),
+        analysis_text=data["analysis_text"] if "analysis_text" in data else _UNSET,
+    )
+    db.commit()
+    db.refresh(item)
+    return _single_item_out(db, item)
 
 
 def _review(

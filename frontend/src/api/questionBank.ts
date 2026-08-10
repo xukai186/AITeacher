@@ -60,6 +60,23 @@ export type QuestionFilters = {
   offset?: number;
 };
 
+export type KnowledgeNodeOption = {
+  id: string;
+  name: string;
+  parent_name: string | null;
+};
+
+export type QuestionBankUpdate = {
+  stem?: string;
+  q_type?: string;
+  choices?: Array<{ key: string; text: string }>;
+  answer_key?: string;
+  subject_code?: string;
+  knowledge_node_id?: string | null;
+  difficulty?: number;
+  analysis_text?: string | null;
+};
+
 export function listQuestions(filters: QuestionFilters) {
   const params = new URLSearchParams();
   if (filters.subject_code) params.set("subject_code", filters.subject_code);
@@ -107,5 +124,17 @@ export function reviewQuestion(
 ) {
   return api<QuestionBankItem>(`/org/question-bank/${itemId}/${action}`, {
     method: "POST",
+  });
+}
+
+export function listKnowledgeNodes(subjectCode: string) {
+  const params = new URLSearchParams({ subject_code: subjectCode });
+  return api<KnowledgeNodeOption[]>(`/org/question-bank/knowledge-nodes?${params}`);
+}
+
+export function updateQuestion(itemId: string, body: QuestionBankUpdate) {
+  return api<QuestionBankItem>(`/org/question-bank/${itemId}`, {
+    method: "PATCH",
+    body: JSON.stringify(body),
   });
 }

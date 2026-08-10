@@ -7,8 +7,11 @@ from fastapi import HTTPException, status
 from sqlalchemy import case, func, or_, select
 from sqlalchemy.orm import Session
 
-from app.models import QuestionBankItem, User, UserRole
+from app.models import QuestionBankItem, SyllabusNode, User, UserRole
 from app.schemas.question_bank import QuestionBankCreate
+
+
+_UNSET = object()
 
 
 class QuestionBankService:
@@ -173,6 +176,113 @@ class QuestionBankService:
             .offset(offset)
         )
         return list(db.execute(stmt).scalars().all())
+
+    def list_leaf_knowledge_nodes(
+        self, db: Session, *, subject_code: str
+    ) -> list[SyllabusNode]:
+        nodes = list(
+            db.execute(
+                select(SyllabusNode)
+                .where(SyllabusNode.subject_code == subject_code)
+                .order_by(SyllabusNode.name)
+            ).scalars().all()
+        )
+        if not nodes:
+            return []
+        parent_ids = {n.parent_id for n in nodes if n.parent_id is not None}
+        return [n for n in nodes if n.id not in parent_ids]
+
+    def update(
+        self,
+        db: Session,
+        *,
+        actor: User,
+        item_id: uuid.UUID,
+        stem: str | None = None,
+        q_type: str | None = None,
+        choices_json: list[dict] | None = None,
+        answer_key: str | None = None,
+        subject_code: str | None = None,
+        knowledge_node_id: uuid.UUID | None | object = _UNSET,
+        difficulty: int | None = None,
+        analysis_text: str | None | object = _UNSET,
+    ) -> QuestionBankItem:
+        item = self._get_mutable_item(db, actor=actor, item_id=item_id)
+        if item.status == "active":
+            raise HTTPException(
+                status.HTTP_409_CONFLICT, "disable question before editing"
+            )
+
+        if not any(
+            v is not _UNSET
+            for v in (
+                stem,
+                q_type,
+                choices_json,
+                answer_key,
+                subject_code,
+                knowledge_node_id,
+                difficulty,
+                analysis_text,
+            )
+        ):
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_ENTITY, "no fields to update"
+            )
+
+        effective_subject = (
+            subject_code if subject_code is not None else item.subject_code
+        )
+
+        if stem is not None:
+            item.stem = stem.strip()
+        if q_type is not None:
+            item.q_type = q_type
+        if choices_json is not None:
+            item.choices_json = choices_json
+        if answer_key is not None:
+            item.answer_key = answer_key
+        if subject_code is not None:
+            item.subject_code = subject_code
+        if difficulty is not None:
+            item.difficulty = difficulty
+        if analysis_text is not _UNSET:
+            item.analysis_text = analysis_text
+
+        if knowledge_node_id is not _UNSET:
+            if knowledge_node_id is None:
+                item.knowledge_node_id = None
+            else:
+                node = db.get(SyllabusNode, knowledge_node_id)
+                if node is None or node.subject_code != effective_subject:
+                    raise HTTPException(
+                        status.HTTP_422_UNPROCESSABLE_ENTITY,
+                        "invalid knowledge node for subject",
+                    )
+                leaves = {
+                    n.id
+                    for n in self.list_leaf_knowledge_nodes(
+                        db, subject_code=effective_subject
+                    )
+                }
+                if node.id not in leaves:
+                    raise HTTPException(
+                        status.HTTP_422_UNPROCESSABLE_ENTITY,
+                        "knowledge node must be a leaf",
+                    )
+                item.knowledge_node_id = node.id
+        elif subject_code is not None and item.knowledge_node_id is not None:
+            node = db.get(SyllabusNode, item.knowledge_node_id)
+            if node is None or node.subject_code != effective_subject:
+                item.knowledge_node_id = None
+
+        if item.status in ("rejected", "disabled"):
+            item.status = "pending_review"
+            item.reviewed_by = None
+            item.reviewed_at = None
+
+        db.flush()
+        return item
 
     def approve(
         self,

@@ -13,6 +13,8 @@ import {
   uploadQuestionImage,
 } from "@/api/questionBank";
 import MathText from "@/components/MathText";
+import KnowledgeNodeSelect from "./KnowledgeNodeSelect";
+import QuestionBankEditForm from "./QuestionBankEditForm";
 
 const SUBJECTS = [
   ["", "全部科目"],
@@ -93,9 +95,13 @@ function formatChoices(
 function QuestionBankItemDetail({
   item,
   onClose,
+  onEdit,
+  canEdit,
 }: {
   item: QuestionBankItem;
   onClose: () => void;
+  onEdit?: () => void;
+  canEdit?: boolean;
 }) {
   const choices = formatChoices(item.choices);
 
@@ -104,9 +110,16 @@ function QuestionBankItemDetail({
       <div className="w-full max-w-2xl rounded bg-white p-6 shadow-xl">
         <div className="mb-4 flex items-start justify-between gap-4">
           <h2 className="text-lg font-semibold">题目详情</h2>
-          <button type="button" onClick={onClose} className="text-sm text-slate-600 underline">
-            关闭
-          </button>
+          <div className="flex items-center gap-3">
+            {canEdit && onEdit ? (
+              <button type="button" onClick={onEdit} className="text-sm text-slate-900 underline">
+                编辑
+              </button>
+            ) : null}
+            <button type="button" onClick={onClose} className="text-sm text-slate-600 underline">
+              关闭
+            </button>
+          </div>
         </div>
 
         <dl className="space-y-4 text-sm">
@@ -208,6 +221,7 @@ export default function QuestionBankPage({ role }: { role: QuestionBankRole }) {
   const [confirmation, setConfirmation] = useState<Enrichment | null>(null);
   const [scope, setScope] = useState<"org" | "global">("org");
   const [detailItem, setDetailItem] = useState<QuestionBankItem | null>(null);
+  const [editItem, setEditItem] = useState<QuestionBankItem | null>(null);
 
   const filters = { subject_code: subject, status, pending: pendingOnly, limit, offset };
   const questions = useQuery({
@@ -451,6 +465,18 @@ export default function QuestionBankPage({ role }: { role: QuestionBankRole }) {
                       >
                         查看
                       </button>
+                      {item.status !== "active" && canMutate && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setDetailItem(null);
+                            setEditItem(item);
+                          }}
+                          className="text-slate-700 underline"
+                        >
+                          编辑
+                        </button>
+                      )}
                       {item.status === "pending_review" && canMutate && (
                         <>
                           <button
@@ -512,7 +538,30 @@ export default function QuestionBankPage({ role }: { role: QuestionBankRole }) {
       </section>
 
       {detailItem ? (
-        <QuestionBankItemDetail item={detailItem} onClose={() => setDetailItem(null)} />
+        <QuestionBankItemDetail
+          item={detailItem}
+          onClose={() => setDetailItem(null)}
+          canEdit={
+            detailItem.status !== "active" &&
+            (role === "org_admin" || detailItem.scope === "org")
+          }
+          onEdit={() => {
+            setEditItem(detailItem);
+            setDetailItem(null);
+          }}
+        />
+      ) : null}
+
+      {editItem ? (
+        <QuestionBankEditForm
+          item={editItem}
+          onClose={() => setEditItem(null)}
+          onSaved={() => {
+            setEditItem(null);
+            resetList();
+            queryClient.invalidateQueries({ queryKey: ["question-bank"] });
+          }}
+        />
       ) : null}
 
       {showCreate && (
@@ -712,9 +761,12 @@ export default function QuestionBankPage({ role }: { role: QuestionBankRole }) {
                       setConfirmation({
                         ...confirmation,
                         subject_code: event.target.value,
+                        knowledge_node_id: null,
+                        knowledge_node_name: null,
                       })
                     }
                     className="w-full rounded border px-3 py-2"
+                    aria-label="科目"
                   >
                     {SUBJECTS.slice(1).map(([value, label]) => (
                       <option key={value} value={value}>{label}</option>
@@ -723,15 +775,17 @@ export default function QuestionBankPage({ role }: { role: QuestionBankRole }) {
                 </label>
                 <label className="block space-y-1">
                   <span>知识点</span>
-                  {confirmation.knowledge_node_name ? (
-                    <p className="rounded border bg-slate-50 px-3 py-2 text-sm">
-                      {confirmation.knowledge_node_name}
-                    </p>
-                  ) : (
-                    <p className="rounded border bg-slate-50 px-3 py-2 text-sm text-slate-500">
-                      （未标注知识点）
-                    </p>
-                  )}
+                  <KnowledgeNodeSelect
+                    subjectCode={confirmation.subject_code}
+                    value={confirmation.knowledge_node_id}
+                    onChange={(id) =>
+                      setConfirmation({
+                        ...confirmation,
+                        knowledge_node_id: id,
+                        knowledge_node_name: null,
+                      })
+                    }
+                  />
                 </label>
                 <label className="block space-y-1">
                   <span>难度（1-5）</span>
