@@ -201,3 +201,56 @@ def test_question_bank_list_resolves_knowledge_node_name(client, db_session):
     assert listed.status_code == 200
     row = next(item for item in listed.json() if item["id"] == created.json()["id"])
     assert row["knowledge_node_name"] == "极限 / 导数"
+
+
+def test_list_knowledge_nodes_returns_leaves(client, db_session):
+    admin = _seed_user(db_session, UserRole.org_admin, email="nodes-admin@example.com")
+    parent = SyllabusNode(subject_code="math", name="高数", parent_id=None, weight=1)
+    db_session.add(parent)
+    db_session.flush()
+    leaf = SyllabusNode(subject_code="math", name="多元函数", parent_id=parent.id, weight=1)
+    db_session.add(leaf)
+    db_session.commit()
+    headers = _headers(client, admin.email)
+
+    resp = client.get("/org/question-bank/knowledge-nodes?subject_code=math", headers=headers)
+    assert resp.status_code == 200
+    row = next(r for r in resp.json() if r["id"] == str(leaf.id))
+    assert row["name"] == "多元函数"
+    assert row["parent_name"] == "高数"
+
+
+def test_patch_question_bank_item(client, db_session):
+    admin = _seed_user(db_session, UserRole.org_admin, email="patch-admin@example.com")
+    headers = _headers(client, admin.email)
+    created = client.post(
+        "/org/question-bank",
+        json=_question_payload(source_type="ocr_import"),
+        headers=headers,
+    )
+    assert created.status_code == 201
+    item_id = created.json()["id"]
+
+    patched = client.patch(
+        f"/org/question-bank/{item_id}",
+        json={"stem": "Patched stem", "difficulty": 4},
+        headers=headers,
+    )
+    assert patched.status_code == 200
+    assert patched.json()["stem"] == "Patched stem"
+    assert patched.json()["difficulty"] == 4
+    assert patched.json()["status"] == "pending_review"
+
+
+def test_patch_active_question_returns_409(client, db_session):
+    admin = _seed_user(db_session, UserRole.org_admin, email="patch-active@example.com")
+    headers = _headers(client, admin.email)
+    created = client.post("/org/question-bank", json=_question_payload(), headers=headers)
+    item_id = created.json()["id"]
+
+    resp = client.patch(
+        f"/org/question-bank/{item_id}",
+        json={"stem": "Cannot"},
+        headers=headers,
+    )
+    assert resp.status_code == 409
