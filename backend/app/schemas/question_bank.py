@@ -44,6 +44,23 @@ class QuestionBankCreateRequest(BaseModel):
     source_image_asset_id: uuid.UUID | None = None
 
 
+class QuestionBankUpdateRequest(BaseModel):
+    stem: str | None = None
+    q_type: str | None = None
+    choices: list[dict] | None = None
+    answer_key: str | None = None
+    subject_code: str | None = None
+    knowledge_node_id: uuid.UUID | None = None
+    difficulty: int | None = Field(default=None, ge=1, le=5)
+    analysis_text: str | None = None
+
+
+class KnowledgeNodeOptionOut(BaseModel):
+    id: uuid.UUID
+    name: str
+    parent_name: str | None = None
+
+
 class QuestionEnrichmentRequest(BaseModel):
     stem: str
     q_type: str
