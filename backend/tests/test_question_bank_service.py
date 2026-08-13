@@ -413,3 +413,61 @@ def test_update_active_is_rejected(db_session):
     with pytest.raises(HTTPException) as exc:
         svc.update(db_session, actor=admin, item_id=item.id, stem="Nope")
     assert exc.value.status_code == 409
+
+
+def test_delete_pending_review_sets_deleted(db_session):
+    admin, _ = _admin(db_session)
+    svc = QuestionBankService()
+    item = _create(svc, db_session, admin, source_type="ocr_import")
+    deleted = svc.delete(db_session, actor=admin, item_id=item.id)
+    assert deleted.status == "deleted"
+
+
+def test_delete_active_is_rejected(db_session):
+    admin, _ = _admin(db_session)
+    svc = QuestionBankService()
+    item = _create(svc, db_session, admin)
+    with pytest.raises(HTTPException) as exc:
+        svc.delete(db_session, actor=admin, item_id=item.id)
+    assert exc.value.status_code == 409
+
+
+def test_delete_already_deleted_is_rejected(db_session):
+    admin, _ = _admin(db_session)
+    svc = QuestionBankService()
+    item = _create(svc, db_session, admin, source_type="ocr_import")
+    svc.delete(db_session, actor=admin, item_id=item.id)
+    with pytest.raises(HTTPException) as exc:
+        svc.delete(db_session, actor=admin, item_id=item.id)
+    assert exc.value.status_code == 409
+
+
+def test_list_excludes_deleted_even_when_status_filter_is_deleted(db_session):
+    admin, _ = _admin(db_session)
+    svc = QuestionBankService()
+    live = _create(svc, db_session, admin, stem="Keep me")
+    doomed = _create(svc, db_session, admin, source_type="ocr_import", stem="Drop me")
+    svc.delete(db_session, actor=admin, item_id=doomed.id)
+    db_session.flush()
+
+    ids = {item.id for item in svc.list(db_session, viewer=admin)}
+    assert live.id in ids
+    assert doomed.id not in ids
+    assert svc.list(db_session, viewer=admin, status="deleted") == []
+
+
+def test_dedupe_ignores_deleted_so_stem_can_be_recreated(db_session):
+    admin, org = _admin(db_session)
+    svc = QuestionBankService()
+    original = _create(svc, db_session, admin, source_type="ocr_import", stem="Same stem")
+    svc.delete(db_session, actor=admin, item_id=original.id)
+    db_session.flush()
+
+    assert (
+        svc.find_exact_duplicate(
+            db_session, scope="org", org_id=org.id, q_type="single_choice", stem="Same stem"
+        )
+        is None
+    )
+    recreated = _create(svc, db_session, admin, stem="Same stem")
+    assert recreated.status == "active"

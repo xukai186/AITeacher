@@ -173,6 +173,7 @@ class QuestionBankService:
             visibility = QuestionBankItem.org_id == viewer.org_id
 
         stmt = select(QuestionBankItem).where(visibility)
+        stmt = stmt.where(QuestionBankItem.status != "deleted")
         if pending_only:
             stmt = stmt.where(QuestionBankItem.status == "pending_review")
         elif status is not None:
@@ -338,6 +339,23 @@ class QuestionBankService:
         db.flush()
         return item
 
+    def delete(
+        self,
+        db: Session,
+        *,
+        actor: User,
+        item_id: uuid.UUID,
+    ) -> QuestionBankItem:
+        item = self._get_mutable_item(db, actor=actor, item_id=item_id)
+        if item.status not in ("pending_review", "rejected", "disabled"):
+            raise HTTPException(
+                status.HTTP_409_CONFLICT,
+                "disable question before deleting",
+            )
+        item.status = "deleted"
+        db.flush()
+        return item
+
     def find_exact_duplicate(
         self,
         db: Session,
@@ -355,6 +373,7 @@ class QuestionBankService:
                 QuestionBankItem.org_id == org_id,
                 QuestionBankItem.q_type == q_type,
                 func.btrim(QuestionBankItem.stem) == normalized_stem,
+                QuestionBankItem.status != "deleted",
             )
             .order_by(
                 case(
@@ -438,6 +457,11 @@ class QuestionBankService:
             raise HTTPException(
                 status.HTTP_404_NOT_FOUND,
                 "question bank item not found",
+            )
+        if item.status == "deleted":
+            raise HTTPException(
+                status.HTTP_409_CONFLICT,
+                "question bank item is deleted",
             )
         return item
 
