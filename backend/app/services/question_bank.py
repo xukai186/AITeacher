@@ -7,7 +7,7 @@ from fastapi import HTTPException, status
 from sqlalchemy import case, func, or_, select
 from sqlalchemy.orm import Session
 
-from app.models import QuestionBankItem, SyllabusNode, User, UserRole
+from app.models import MediaAsset, QuestionBankItem, SyllabusNode, User, UserRole
 from app.schemas.question_bank import QuestionBankCreate
 
 
@@ -101,6 +101,19 @@ class QuestionBankService:
             org_id=org_id,
             allow_machine_actor=allow_machine_actor and source_type == "ai_generated",
         )
+
+        if source_type == "ocr_import":
+            if source_image_asset_id is None:
+                raise HTTPException(
+                    status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    "ocr import requires source image asset",
+                )
+            asset = db.get(MediaAsset, source_image_asset_id)
+            if asset is None or asset.org_id != actor.org_id:
+                raise HTTPException(
+                    status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    "invalid source image asset",
+                )
 
         normalized_stem = stem.strip()
         duplicate = self.find_exact_duplicate(
