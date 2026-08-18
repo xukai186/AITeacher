@@ -1,7 +1,7 @@
 # 题库 OCR 提交守卫与软删除 — 产品设计规格
 
 **日期：** 2026-08-13  
-**状态：** 待实现  
+**状态：** 已实现  
 **依赖：** 全局题库 P1–P3、题库编辑与知识点选择器（PR #49–#52）  
 **关联：** `docs/superpowers/specs/2026-08-04-global-question-bank-design.md`、`docs/superpowers/specs/2026-08-10-question-bank-edit-node-picker-design.md`
 
