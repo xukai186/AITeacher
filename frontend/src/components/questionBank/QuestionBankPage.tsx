@@ -319,8 +319,11 @@ export default function QuestionBankPage({ role }: { role: QuestionBankRole }) {
     answer_key: draft.answerKey.trim() || undefined,
   });
 
+  const ocrReady = createMode !== "ocr" || Boolean(sourceImageAssetId);
+
   const onEnrich = (event: FormEvent) => {
     event.preventDefault();
+    if (!ocrReady) return;
     enrichMutation.mutate(questionDraft());
   };
 
@@ -700,11 +703,14 @@ export default function QuestionBankPage({ role }: { role: QuestionBankRole }) {
                   </button>
                   <button
                     type="submit"
-                    disabled={enrichMutation.isPending}
+                    disabled={enrichMutation.isPending || !ocrReady}
                     className="rounded bg-slate-900 px-4 py-2 text-white disabled:opacity-50"
                   >
                     {enrichMutation.isPending ? "补全中…" : "智能补全"}
                   </button>
+                  {createMode === "ocr" && !ocrReady ? (
+                    <p className="text-sm text-slate-500">请先完成图片识别</p>
+                  ) : null}
                 </div>
                 {enrichMutation.error && (
                   <p role="alert" className="text-sm text-red-600">

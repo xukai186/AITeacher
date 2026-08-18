@@ -137,4 +137,29 @@ describe("Question bank OCR import", () => {
       ],
     });
   });
+
+  it("disables enrich until OCR recognition succeeds", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo) => {
+      const url = String(input);
+      if (url.includes("/org/question-bank")) {
+        return new Response(JSON.stringify([]), { status: 200 });
+      }
+      return new Response("not found", { status: 404 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderPage();
+    fireEvent.click(screen.getByRole("button", { name: "新建题目" }));
+    fireEvent.click(screen.getByRole("button", { name: "图片识别添加" }));
+    fireEvent.change(screen.getByLabelText("题干"), {
+      target: { value: "手工填的题干" },
+    });
+    fireEvent.change(screen.getByLabelText("参考答案"), {
+      target: { value: "1" },
+    });
+
+    const enrich = screen.getByRole("button", { name: "智能补全" });
+    expect(enrich).toBeDisabled();
+    expect(screen.getByText("请先完成图片识别")).toBeTruthy();
+  });
 });
