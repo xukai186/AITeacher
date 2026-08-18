@@ -319,7 +319,9 @@ export default function QuestionBankPage({ role }: { role: QuestionBankRole }) {
     answer_key: draft.answerKey.trim() || undefined,
   });
 
-  const ocrReady = createMode !== "ocr" || Boolean(sourceImageAssetId);
+  const ocrReady =
+    createMode !== "ocr" ||
+    (ocrMutation.isSuccess && Boolean(sourceImageAssetId));
 
   const onEnrich = (event: FormEvent) => {
     event.preventDefault();
