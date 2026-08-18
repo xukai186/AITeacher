@@ -534,4 +534,54 @@ describe("Question bank", () => {
       knowledge_node_id: "n1",
     });
   });
+
+  it("soft-deletes a pending question after confirm", async () => {
+    const item = {
+      id: "q-del",
+      scope: "org" as const,
+      org_id: "org-1",
+      subject_code: "math",
+      knowledge_node_id: null,
+      q_type: "short_answer",
+      stem: "To delete",
+      choices: null,
+      answer_key: "1",
+      analysis_text: null,
+      difficulty: 2,
+      source_type: "ocr_import",
+      status: "pending_review" as const,
+      created_at: "2026-01-01T00:00:00Z",
+    };
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+
+    const fetchMock = vi.fn(async (input: RequestInfo, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes("/org/question-bank/knowledge-nodes")) {
+        return new Response(JSON.stringify([]), { status: 200 });
+      }
+      if (url.includes("/org/question-bank/q-del/delete") && init?.method === "POST") {
+        return new Response(JSON.stringify({ ...item, status: "deleted" }), { status: 200 });
+      }
+      if (url.includes("/org/question-bank") && !url.includes("/enrich")) {
+        return new Response(JSON.stringify([item]), { status: 200 });
+      }
+      return new Response("not found", { status: 404 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderPage();
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "删除" })).toBeTruthy(),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "删除" }));
+
+    await waitFor(() => {
+      expect(window.confirm).toHaveBeenCalledWith("删除后列表不再显示，确认删除？");
+      const del = fetchMock.mock.calls.find(
+        ([url, init]) =>
+          String(url).includes("/org/question-bank/q-del/delete") && init?.method === "POST",
+      );
+      expect(del).toBeTruthy();
+    });
+  });
 });
