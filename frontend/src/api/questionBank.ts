@@ -1,7 +1,7 @@
 import { api } from "./client";
 
 export type QuestionBankRole = "org_admin" | "org_staff";
-export type QuestionStatus = "pending_review" | "active" | "rejected" | "disabled";
+export type QuestionStatus = "pending_review" | "active" | "rejected" | "disabled" | "deleted";
 
 export type QuestionBankItem = {
   id: string;
@@ -120,7 +120,7 @@ export function createQuestion(body: CreateQuestion) {
 
 export function reviewQuestion(
   itemId: string,
-  action: "approve" | "reject" | "disable",
+  action: "approve" | "reject" | "disable" | "delete",
 ) {
   return api<QuestionBankItem>(`/org/question-bank/${itemId}/${action}`, {
     method: "POST",
