@@ -50,6 +50,7 @@ const SCOPE_LABELS: Record<string, string> = {
   global: "平台公共",
 };
 const OBJECTIVE_TYPES = new Set(["single_choice", "multi_choice"]);
+const DELETABLE = new Set(["pending_review", "rejected", "disabled"]);
 
 type Draft = {
   stem: string;
@@ -97,11 +98,15 @@ function QuestionBankItemDetail({
   onClose,
   onEdit,
   canEdit,
+  onDelete,
+  canDelete,
 }: {
   item: QuestionBankItem;
   onClose: () => void;
   onEdit?: () => void;
   canEdit?: boolean;
+  onDelete?: () => void;
+  canDelete?: boolean;
 }) {
   const choices = formatChoices(item.choices);
 
@@ -114,6 +119,11 @@ function QuestionBankItemDetail({
             {canEdit && onEdit ? (
               <button type="button" onClick={onEdit} className="text-sm text-slate-900 underline">
                 编辑
+              </button>
+            ) : null}
+            {canDelete && onDelete ? (
+              <button type="button" onClick={onDelete} className="text-sm text-red-700 underline">
+                删除
               </button>
             ) : null}
             <button type="button" onClick={onClose} className="text-sm text-slate-600 underline">
@@ -302,13 +312,19 @@ export default function QuestionBankPage({ role }: { role: QuestionBankRole }) {
       action,
     }: {
       id: string;
-      action: "approve" | "reject" | "disable";
+      action: "approve" | "reject" | "disable" | "delete";
     }) => reviewQuestion(id, action),
     onSuccess: () => {
       resetList();
       queryClient.invalidateQueries({ queryKey: ["question-bank"] });
     },
   });
+
+  const requestDelete = (id: string) => {
+    if (!window.confirm("删除后列表不再显示，确认删除？")) return false;
+    reviewMutation.mutate({ id, action: "delete" });
+    return true;
+  };
 
   const questionDraft = () => ({
     stem: draft.stem.trim(),
@@ -319,8 +335,13 @@ export default function QuestionBankPage({ role }: { role: QuestionBankRole }) {
     answer_key: draft.answerKey.trim() || undefined,
   });
 
+  const ocrReady =
+    createMode !== "ocr" ||
+    (ocrMutation.isSuccess && Boolean(sourceImageAssetId));
+
   const onEnrich = (event: FormEvent) => {
     event.preventDefault();
+    if (!ocrReady) return;
     enrichMutation.mutate(questionDraft());
   };
 
@@ -477,6 +498,15 @@ export default function QuestionBankPage({ role }: { role: QuestionBankRole }) {
                           编辑
                         </button>
                       )}
+                      {DELETABLE.has(item.status) && canMutate && (
+                        <button
+                          type="button"
+                          onClick={() => requestDelete(item.id)}
+                          className="text-red-700 underline"
+                        >
+                          删除
+                        </button>
+                      )}
                       {item.status === "pending_review" && canMutate && (
                         <>
                           <button
@@ -545,9 +575,16 @@ export default function QuestionBankPage({ role }: { role: QuestionBankRole }) {
             detailItem.status !== "active" &&
             (role === "org_admin" || detailItem.scope === "org")
           }
+          canDelete={
+            DELETABLE.has(detailItem.status) &&
+            (role === "org_admin" || detailItem.scope === "org")
+          }
           onEdit={() => {
             setEditItem(detailItem);
             setDetailItem(null);
+          }}
+          onDelete={() => {
+            if (requestDelete(detailItem.id)) setDetailItem(null);
           }}
         />
       ) : null}
@@ -700,11 +737,14 @@ export default function QuestionBankPage({ role }: { role: QuestionBankRole }) {
                   </button>
                   <button
                     type="submit"
-                    disabled={enrichMutation.isPending}
+                    disabled={enrichMutation.isPending || !ocrReady}
                     className="rounded bg-slate-900 px-4 py-2 text-white disabled:opacity-50"
                   >
                     {enrichMutation.isPending ? "补全中…" : "智能补全"}
                   </button>
+                  {createMode === "ocr" && !ocrReady ? (
+                    <p className="text-sm text-slate-500">请先完成图片识别</p>
+                  ) : null}
                 </div>
                 {enrichMutation.error && (
                   <p role="alert" className="text-sm text-red-600">

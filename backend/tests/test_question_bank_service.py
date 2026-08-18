@@ -3,7 +3,7 @@ import uuid
 import pytest
 from fastapi import HTTPException
 
-from app.models import SyllabusNode, UserRole
+from app.models import MediaAsset, SyllabusNode, UserRole
 from app.schemas.question_bank import QuestionBankCreate
 from app.services.question_bank import QuestionBankService
 from tests.factories import make_org, make_user
@@ -16,6 +16,18 @@ def _admin(db_session):
 
 def _staff(db_session, org):
     return make_user(db_session, org, UserRole.org_staff)
+
+
+def _media_asset(db_session, actor, org_id=None):
+    asset = MediaAsset(
+        org_id=org_id or actor.org_id,
+        created_by=actor.id,
+        content_type="image/png",
+        storage_path=f"/tmp/{uuid.uuid4()}.png",
+    )
+    db_session.add(asset)
+    db_session.flush()
+    return asset
 
 
 def _create(svc, db_session, actor, **overrides):
@@ -33,6 +45,11 @@ def _create(svc, db_session, actor, **overrides):
         "source_type": "admin_manual",
     }
     values.update(overrides)
+    if (
+        values.get("source_type") == "ocr_import"
+        and "source_image_asset_id" not in overrides
+    ):
+        values["source_image_asset_id"] = _media_asset(db_session, actor).id
     return svc.create(db_session, actor=actor, **values)
 
 
@@ -85,6 +102,49 @@ def test_imported_or_generated_create_is_pending_review(db_session, source_type)
     )
 
     assert item.status == "pending_review"
+
+
+def test_ocr_import_requires_source_image_asset(db_session):
+    admin, _ = _admin(db_session)
+    with pytest.raises(HTTPException) as exc:
+        _create(
+            QuestionBankService(),
+            db_session,
+            admin,
+            source_type="ocr_import",
+            source_image_asset_id=None,
+        )
+    assert exc.value.status_code == 422
+
+
+def test_ocr_import_rejects_foreign_org_asset(db_session):
+    admin, _ = _admin(db_session)
+    other = make_org(db_session, "Other")
+    foreign_admin = make_user(db_session, other, UserRole.org_admin)
+    asset = _media_asset(db_session, foreign_admin, org_id=other.id)
+    with pytest.raises(HTTPException) as exc:
+        _create(
+            QuestionBankService(),
+            db_session,
+            admin,
+            source_type="ocr_import",
+            source_image_asset_id=asset.id,
+        )
+    assert exc.value.status_code == 422
+
+
+def test_ocr_import_accepts_actor_org_asset(db_session):
+    admin, _ = _admin(db_session)
+    asset = _media_asset(db_session, admin)
+    item = _create(
+        QuestionBankService(),
+        db_session,
+        admin,
+        source_type="ocr_import",
+        source_image_asset_id=asset.id,
+    )
+    assert item.status == "pending_review"
+    assert item.source_image_asset_id == asset.id
 
 
 def test_exact_duplicate_detected_after_stem_strip(db_session):
@@ -353,3 +413,61 @@ def test_update_active_is_rejected(db_session):
     with pytest.raises(HTTPException) as exc:
         svc.update(db_session, actor=admin, item_id=item.id, stem="Nope")
     assert exc.value.status_code == 409
+
+
+def test_delete_pending_review_sets_deleted(db_session):
+    admin, _ = _admin(db_session)
+    svc = QuestionBankService()
+    item = _create(svc, db_session, admin, source_type="ocr_import")
+    deleted = svc.delete(db_session, actor=admin, item_id=item.id)
+    assert deleted.status == "deleted"
+
+
+def test_delete_active_is_rejected(db_session):
+    admin, _ = _admin(db_session)
+    svc = QuestionBankService()
+    item = _create(svc, db_session, admin)
+    with pytest.raises(HTTPException) as exc:
+        svc.delete(db_session, actor=admin, item_id=item.id)
+    assert exc.value.status_code == 409
+
+
+def test_delete_already_deleted_is_rejected(db_session):
+    admin, _ = _admin(db_session)
+    svc = QuestionBankService()
+    item = _create(svc, db_session, admin, source_type="ocr_import")
+    svc.delete(db_session, actor=admin, item_id=item.id)
+    with pytest.raises(HTTPException) as exc:
+        svc.delete(db_session, actor=admin, item_id=item.id)
+    assert exc.value.status_code == 409
+
+
+def test_list_excludes_deleted_even_when_status_filter_is_deleted(db_session):
+    admin, _ = _admin(db_session)
+    svc = QuestionBankService()
+    live = _create(svc, db_session, admin, stem="Keep me")
+    doomed = _create(svc, db_session, admin, source_type="ocr_import", stem="Drop me")
+    svc.delete(db_session, actor=admin, item_id=doomed.id)
+    db_session.flush()
+
+    ids = {item.id for item in svc.list(db_session, viewer=admin)}
+    assert live.id in ids
+    assert doomed.id not in ids
+    assert svc.list(db_session, viewer=admin, status="deleted") == []
+
+
+def test_dedupe_ignores_deleted_so_stem_can_be_recreated(db_session):
+    admin, org = _admin(db_session)
+    svc = QuestionBankService()
+    original = _create(svc, db_session, admin, source_type="ocr_import", stem="Same stem")
+    svc.delete(db_session, actor=admin, item_id=original.id)
+    db_session.flush()
+
+    assert (
+        svc.find_exact_duplicate(
+            db_session, scope="org", org_id=org.id, q_type="single_choice", stem="Same stem"
+        )
+        is None
+    )
+    recreated = _create(svc, db_session, admin, stem="Same stem")
+    assert recreated.status == "active"

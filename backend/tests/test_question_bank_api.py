@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from app.auth.security import hash_password
-from app.models import SyllabusNode, UserRole
+from app.models import MediaAsset, SyllabusNode, UserRole
 from tests.factories import make_org, make_user
 
 
@@ -39,6 +39,18 @@ def _question_payload(**overrides):
     }
     payload.update(overrides)
     return payload
+
+
+def _media_asset(db_session, actor):
+    asset = MediaAsset(
+        org_id=actor.org_id,
+        created_by=actor.id,
+        content_type="image/png",
+        storage_path=f"/tmp/{actor.id}.png",
+    )
+    db_session.add(asset)
+    db_session.commit()
+    return asset
 
 
 def test_admin_creates_lists_and_reviews_question_bank_items(client, db_session):
@@ -109,11 +121,13 @@ def test_staff_can_enrich_create_and_reject_org_question(client, db_session):
     assert enriched.json()["subject_code"] == "math"
     assert enriched.json()["difficulty"] == 3
 
+    asset = _media_asset(db_session, staff)
     created = client.post(
         "/org/question-bank",
         json=_question_payload(
             stem="Question imported from an image",
             source_type="ocr_import",
+            source_image_asset_id=str(asset.id),
         ),
         headers=headers,
     )
@@ -222,10 +236,14 @@ def test_list_knowledge_nodes_returns_leaves(client, db_session):
 
 def test_patch_question_bank_item(client, db_session):
     admin = _seed_user(db_session, UserRole.org_admin, email="patch-admin@example.com")
+    asset = _media_asset(db_session, admin)
     headers = _headers(client, admin.email)
     created = client.post(
         "/org/question-bank",
-        json=_question_payload(source_type="ocr_import"),
+        json=_question_payload(
+            source_type="ocr_import",
+            source_image_asset_id=str(asset.id),
+        ),
         headers=headers,
     )
     assert created.status_code == 201
@@ -251,6 +269,68 @@ def test_patch_active_question_returns_409(client, db_session):
     resp = client.patch(
         f"/org/question-bank/{item_id}",
         json={"stem": "Cannot"},
+        headers=headers,
+    )
+    assert resp.status_code == 409
+
+
+def test_ocr_import_without_asset_returns_422(client, db_session):
+    admin = _seed_user(db_session, UserRole.org_admin, email="ocr-no-asset@example.com")
+    headers = _headers(client, admin.email)
+    resp = client.post(
+        "/org/question-bank",
+        json=_question_payload(source_type="ocr_import"),
+        headers=headers,
+    )
+    assert resp.status_code == 422
+
+
+def test_ocr_import_with_org_asset_returns_201(client, db_session):
+    admin = _seed_user(db_session, UserRole.org_admin, email="ocr-asset@example.com")
+    asset = _media_asset(db_session, admin)
+    headers = _headers(client, admin.email)
+    resp = client.post(
+        "/org/question-bank",
+        json=_question_payload(
+            source_type="ocr_import",
+            source_image_asset_id=str(asset.id),
+        ),
+        headers=headers,
+    )
+    assert resp.status_code == 201
+    assert resp.json()["status"] == "pending_review"
+    assert resp.json()["source_image_asset_id"] == str(asset.id)
+
+
+def test_delete_pending_question(client, db_session):
+    admin = _seed_user(db_session, UserRole.org_admin, email="delete-admin@example.com")
+    asset = _media_asset(db_session, admin)
+    headers = _headers(client, admin.email)
+    created = client.post(
+        "/org/question-bank",
+        json=_question_payload(
+            source_type="ocr_import",
+            source_image_asset_id=str(asset.id),
+        ),
+        headers=headers,
+    )
+    item_id = created.json()["id"]
+
+    deleted = client.post(f"/org/question-bank/{item_id}/delete", headers=headers)
+    assert deleted.status_code == 200
+    assert deleted.json()["status"] == "deleted"
+
+    listed = client.get("/org/question-bank", headers=headers)
+    assert listed.status_code == 200
+    assert item_id not in {row["id"] for row in listed.json()}
+
+
+def test_delete_active_question_returns_409(client, db_session):
+    admin = _seed_user(db_session, UserRole.org_admin, email="delete-active@example.com")
+    headers = _headers(client, admin.email)
+    created = client.post("/org/question-bank", json=_question_payload(), headers=headers)
+    resp = client.post(
+        f"/org/question-bank/{created.json()['id']}/delete",
         headers=headers,
     )
     assert resp.status_code == 409

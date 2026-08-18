@@ -325,3 +325,12 @@ def disable_question(
     actor: User = Depends(staff_or_admin),
 ) -> QuestionBankItemOut:
     return _review("disable", item_id, db, actor)
+
+
+@router.post("/{item_id}/delete", response_model=QuestionBankItemOut)
+def delete_question(
+    item_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    actor: User = Depends(staff_or_admin),
+) -> QuestionBankItemOut:
+    return _review("delete", item_id, db, actor)

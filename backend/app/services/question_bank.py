@@ -7,7 +7,7 @@ from fastapi import HTTPException, status
 from sqlalchemy import case, func, or_, select
 from sqlalchemy.orm import Session
 
-from app.models import QuestionBankItem, SyllabusNode, User, UserRole
+from app.models import MediaAsset, QuestionBankItem, SyllabusNode, User, UserRole
 from app.schemas.question_bank import QuestionBankCreate
 
 
@@ -102,6 +102,19 @@ class QuestionBankService:
             allow_machine_actor=allow_machine_actor and source_type == "ai_generated",
         )
 
+        if source_type == "ocr_import":
+            if source_image_asset_id is None:
+                raise HTTPException(
+                    status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    "ocr import requires source image asset",
+                )
+            asset = db.get(MediaAsset, source_image_asset_id)
+            if asset is None or asset.org_id != actor.org_id:
+                raise HTTPException(
+                    status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    "invalid source image asset",
+                )
+
         normalized_stem = stem.strip()
         duplicate = self.find_exact_duplicate(
             db,
@@ -160,6 +173,7 @@ class QuestionBankService:
             visibility = QuestionBankItem.org_id == viewer.org_id
 
         stmt = select(QuestionBankItem).where(visibility)
+        stmt = stmt.where(QuestionBankItem.status != "deleted")
         if pending_only:
             stmt = stmt.where(QuestionBankItem.status == "pending_review")
         elif status is not None:
@@ -325,6 +339,23 @@ class QuestionBankService:
         db.flush()
         return item
 
+    def delete(
+        self,
+        db: Session,
+        *,
+        actor: User,
+        item_id: uuid.UUID,
+    ) -> QuestionBankItem:
+        item = self._get_mutable_item(db, actor=actor, item_id=item_id)
+        if item.status not in ("pending_review", "rejected", "disabled"):
+            raise HTTPException(
+                status.HTTP_409_CONFLICT,
+                "disable question before deleting",
+            )
+        item.status = "deleted"
+        db.flush()
+        return item
+
     def find_exact_duplicate(
         self,
         db: Session,
@@ -342,6 +373,7 @@ class QuestionBankService:
                 QuestionBankItem.org_id == org_id,
                 QuestionBankItem.q_type == q_type,
                 func.btrim(QuestionBankItem.stem) == normalized_stem,
+                QuestionBankItem.status != "deleted",
             )
             .order_by(
                 case(
@@ -425,6 +457,11 @@ class QuestionBankService:
             raise HTTPException(
                 status.HTTP_404_NOT_FOUND,
                 "question bank item not found",
+            )
+        if item.status == "deleted":
+            raise HTTPException(
+                status.HTTP_409_CONFLICT,
+                "question bank item is deleted",
             )
         return item
 
