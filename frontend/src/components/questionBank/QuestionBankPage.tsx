@@ -634,7 +634,11 @@ export default function QuestionBankPage({ role }: { role: QuestionBankRole }) {
                       <input
                         type="file"
                         accept="image/*"
-                        onChange={(event) => setOcrFile(event.target.files?.[0] ?? null)}
+                        onChange={(event) => {
+                          setOcrFile(event.target.files?.[0] ?? null);
+                          setSourceImageAssetId(null);
+                          ocrMutation.reset();
+                        }}
                         className="block w-full text-sm"
                       />
                     </label>
@@ -738,14 +742,19 @@ export default function QuestionBankPage({ role }: { role: QuestionBankRole }) {
                   <button
                     type="submit"
                     disabled={enrichMutation.isPending || !ocrReady}
+                    aria-describedby={
+                      createMode === "ocr" && !ocrReady ? "ocr-enrich-hint" : undefined
+                    }
                     className="rounded bg-slate-900 px-4 py-2 text-white disabled:opacity-50"
                   >
                     {enrichMutation.isPending ? "补全中…" : "智能补全"}
                   </button>
-                  {createMode === "ocr" && !ocrReady ? (
-                    <p className="text-sm text-slate-500">请先完成图片识别</p>
-                  ) : null}
                 </div>
+                {createMode === "ocr" && !ocrReady ? (
+                  <p id="ocr-enrich-hint" className="text-sm text-slate-500">
+                    请先完成图片识别
+                  </p>
+                ) : null}
                 {enrichMutation.error && (
                   <p role="alert" className="text-sm text-red-600">
                     {(enrichMutation.error as Error).message}
