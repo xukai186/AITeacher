@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
-from typing import Literal
+from typing import Annotated, Literal, Self
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 QuestionScope = Literal["org", "global"]
 QuestionSourceType = Literal[
@@ -82,15 +82,67 @@ class MediaAssetOut(BaseModel):
     storage_key: str
 
 
-class QuestionOCRRequest(BaseModel):
-    asset_id: uuid.UUID
+QuestionOCRMode = Literal[
+    "single_image_single_question",
+    "single_image_multi_question",
+    "multi_image_single_question",
+]
 
 
-class QuestionOCROut(BaseModel):
+class QuestionDraftOut(BaseModel):
     q_type: str
     stem: str
     choices: list[dict] | None
     answer_key: str | None
+
+
+class QuestionOCRRequest(BaseModel):
+    mode: QuestionOCRMode | None = None
+    asset_id: uuid.UUID | None = None
+    asset_ids: list[uuid.UUID] | None = None
+
+    @model_validator(mode="after")
+    def normalize_assets(self) -> Self:
+        if self.mode is None and self.asset_id is not None:
+            self.mode = "single_image_single_question"
+            self.asset_ids = [self.asset_id]
+            return self
+        if self.mode is None:
+            raise ValueError("mode or asset_id is required")
+        if not self.asset_ids:
+            raise ValueError("asset_ids is required")
+        if self.mode == "single_image_multi_question" and len(self.asset_ids) != 1:
+            raise ValueError("single_image_multi_question requires exactly one asset")
+        if self.mode == "multi_image_single_question" and len(self.asset_ids) < 2:
+            raise ValueError("multi_image_single_question requires at least two assets")
+        if self.mode == "single_image_single_question" and len(self.asset_ids) != 1:
+            raise ValueError("single_image_single_question requires exactly one asset")
+        return self
+
+
+class QuestionOCRSegmentedOut(BaseModel):
+    mode: Literal["segmented"] = "segmented"
+    questions: list[QuestionDraftOut]
+
+
+class QuestionOCRRawTextFallbackOut(BaseModel):
+    mode: Literal["raw_text_fallback"] = "raw_text_fallback"
+    raw_text: str
+
+
+class QuestionOCRSingleQuestionOut(BaseModel):
+    mode: Literal["single_question"] = "single_question"
+    question: QuestionDraftOut
+
+
+QuestionOCRResponse = Annotated[
+    QuestionOCRSegmentedOut | QuestionOCRRawTextFallbackOut | QuestionOCRSingleQuestionOut,
+    Field(discriminator="mode"),
+]
+
+# Keep legacy flat shape alias for tests that assert old response during transition:
+class QuestionOCROut(QuestionDraftOut):
+    pass
 
 
 class QuestionBankItemOut(BaseModel):
