@@ -46,6 +46,20 @@ export type RecognizedQuestion = QuestionDraft & {
   choices?: Array<{ key: string; text: string }>;
 };
 
+export type QuestionOcrMode =
+  | "single_image_single_question"
+  | "single_image_multi_question"
+  | "multi_image_single_question";
+
+export type RecognizedQuestionDraft = QuestionDraft & {
+  choices?: Array<{ key: string; text: string }>;
+};
+
+export type RecognizeQuestionsResult =
+  | { mode: "segmented"; questions: RecognizedQuestionDraft[] }
+  | { mode: "raw_text_fallback"; raw_text: string }
+  | { mode: "single_question"; question: RecognizedQuestionDraft };
+
 export type CreateQuestion = QuestionDraft & Enrichment & {
   scope: "org" | "global";
   source_type: "admin_manual" | "staff_manual" | "ocr_import";
@@ -101,6 +115,16 @@ export function uploadQuestionImage(file: File) {
   return api<UploadedQuestionImage>("/org/question-bank/upload-image", {
     method: "POST",
     body,
+  });
+}
+
+export function recognizeQuestions(
+  mode: QuestionOcrMode,
+  assetIds: string[],
+): Promise<RecognizeQuestionsResult> {
+  return api<RecognizeQuestionsResult>("/org/question-bank/ocr", {
+    method: "POST",
+    body: JSON.stringify({ mode, asset_ids: assetIds }),
   });
 }
 
