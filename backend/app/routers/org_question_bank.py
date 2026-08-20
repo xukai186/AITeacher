@@ -18,8 +18,12 @@ from app.schemas.question_bank import (
     QuestionBankUpdateRequest,
     QuestionEnrichmentOut,
     QuestionEnrichmentRequest,
+    QuestionDraftOut,
     QuestionOCROut,
+    QuestionOCRRawTextFallbackOut,
     QuestionOCRRequest,
+    QuestionOCRResponse,
+    QuestionOCRSegmentedOut,
 )
 from app.services.media_assets import MediaAssetService, UploadTooLargeError
 from app.services.question_bank import QuestionBankService, _UNSET
@@ -60,17 +64,33 @@ def upload_image(
     )
 
 
-@router.post("/ocr", response_model=QuestionOCROut)
+@router.post("/ocr")
 def extract_question(
     payload: QuestionOCRRequest,
     db: Session = Depends(get_db),
     actor: User = Depends(staff_or_admin),
-) -> QuestionOCROut:
+) -> QuestionOCRResponse | QuestionOCROut:
+    svc = QuestionOCRService()
     try:
-        question = QuestionOCRService().extract(
-            db,
-            org_id=actor.org_id,
-            asset_id=payload.asset_id,
+        if payload.mode == "single_image_multi_question":
+            result = svc.extract_segmented(
+                db, org_id=actor.org_id, asset_id=payload.asset_ids[0]
+            )
+            if result.kind == "raw_text_fallback":
+                return QuestionOCRRawTextFallbackOut(raw_text=result.raw_text)
+            return QuestionOCRSegmentedOut(
+                questions=[
+                    QuestionDraftOut(
+                        q_type=q.q_type,
+                        stem=q.stem,
+                        choices=q.choices,
+                        answer_key=q.answer_key,
+                    )
+                    for q in result.questions
+                ]
+            )
+        question = svc.extract(
+            db, org_id=actor.org_id, asset_id=payload.asset_ids[0]
         )
     except LookupError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc

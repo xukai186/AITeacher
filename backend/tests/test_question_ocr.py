@@ -134,6 +134,92 @@ def test_extract_segmented_raw_text_fallback(db_session, monkeypatch, tmp_path):
     assert "First question" in result.raw_text
 
 
+def test_ocr_single_image_multi_question_segmented(client, db_session, monkeypatch, tmp_path):
+    headers, staff = _staff_headers(client, db_session)
+    monkeypatch.setattr("app.services.media_assets.MEDIA_ROOT", tmp_path)
+    monkeypatch.setattr(
+        QuestionOCRService,
+        "_extract_segmented",
+        lambda self, path, content_type, policy: {
+            "kind": "segmented",
+            "questions": [
+                {"q_type": "single_choice", "stem": "Q1", "choices": None, "answer_key": "A"},
+                {"q_type": "short_answer", "stem": "Q2", "choices": None, "answer_key": "x"},
+            ],
+        },
+    )
+    uploaded = client.post(
+        "/org/question-bank/upload-image",
+        files={"file": ("sheet.png", PNG_BYTES, "image/png")},
+        headers=headers,
+    )
+    asset_id = uploaded.json()["asset_id"]
+    resp = client.post(
+        "/org/question-bank/ocr",
+        json={"mode": "single_image_multi_question", "asset_ids": [asset_id]},
+        headers=headers,
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["mode"] == "segmented"
+    assert len(body["questions"]) == 2
+
+
+def test_ocr_single_image_multi_question_raw_fallback(client, db_session, monkeypatch, tmp_path):
+    headers, _ = _staff_headers(client, db_session)
+    monkeypatch.setattr("app.services.media_assets.MEDIA_ROOT", tmp_path)
+    monkeypatch.setattr(
+        QuestionOCRService,
+        "_extract_segmented",
+        lambda self, path, content_type, policy: {
+            "kind": "raw_text_fallback",
+            "raw_text": "raw sheet text",
+        },
+    )
+    uploaded = client.post(
+        "/org/question-bank/upload-image",
+        files={"file": ("sheet.png", PNG_BYTES, "image/png")},
+        headers=headers,
+    )
+    asset_id = uploaded.json()["asset_id"]
+    resp = client.post(
+        "/org/question-bank/ocr",
+        json={"mode": "single_image_multi_question", "asset_ids": [asset_id]},
+        headers=headers,
+    )
+    assert resp.status_code == 200
+    assert resp.json() == {"mode": "raw_text_fallback", "raw_text": "raw sheet text"}
+
+
+def test_legacy_asset_id_ocr_still_works(client, db_session, monkeypatch, tmp_path):
+    headers, _ = _staff_headers(client, db_session)
+    monkeypatch.setattr("app.services.media_assets.MEDIA_ROOT", tmp_path)
+    monkeypatch.setattr(
+        QuestionOCRService,
+        "_extract",
+        lambda self, path, content_type, policy: {
+            "q_type": "short_answer",
+            "stem": "Explain the result.",
+            "choices": None,
+            "answer_key": "Because it follows.",
+        },
+    )
+    uploaded = client.post(
+        "/org/question-bank/upload-image",
+        files={"file": ("question.png", PNG_BYTES, "image/png")},
+        headers=headers,
+    )
+    asset_id = uploaded.json()["asset_id"]
+    resp = client.post(
+        "/org/question-bank/ocr",
+        json={"asset_id": asset_id},
+        headers=headers,
+    )
+    assert resp.status_code == 200
+    assert resp.json()["stem"] == "Explain the result."
+    assert "mode" not in resp.json()
+
+
 def test_staff_uploads_image_then_extracts_question(
     client, db_session, monkeypatch, tmp_path
 ):
