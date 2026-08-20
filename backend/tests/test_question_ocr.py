@@ -7,7 +7,7 @@ from sqlalchemy import select
 from app.auth.security import hash_password
 from app.models import MediaAsset, UserRole
 from app.services.media_assets import MAX_UPLOAD_BYTES
-from app.services.question_ocr import QuestionOCRService
+from app.services.question_ocr import QuestionOCRService, SegmentedOCRResult
 from tests.factories import make_org, make_user
 
 PNG_BYTES = b"\x89PNG\r\n\x1a\n" + b"test-image"
@@ -58,6 +58,80 @@ def test_ocr_service_returns_structured_question_from_stub(db_session, monkeypat
     assert result.stem == "Which answer is correct?"
     assert result.q_type == "single_choice"
     assert result.answer_key == "A"
+
+
+def test_extract_segmented_returns_multiple_questions(db_session, monkeypatch, tmp_path):
+    org = make_org(db_session)
+    staff = make_user(db_session, org, role=UserRole.org_staff)
+    image_path = tmp_path / "sheet.png"
+    image_path.write_bytes(b"fake sheet")
+    asset = MediaAsset(
+        org_id=org.id,
+        created_by=staff.id,
+        content_type="image/png",
+        storage_path=str(image_path),
+    )
+    db_session.add(asset)
+    db_session.commit()
+
+    monkeypatch.setattr(
+        QuestionOCRService,
+        "_extract_segmented",
+        lambda self, path, content_type, policy: {
+            "kind": "segmented",
+            "questions": [
+                {
+                    "q_type": "single_choice",
+                    "stem": "Q1",
+                    "choices": [{"key": "A", "text": "1"}],
+                    "answer_key": "A",
+                },
+                {
+                    "q_type": "short_answer",
+                    "stem": "Q2",
+                    "choices": None,
+                    "answer_key": "open",
+                },
+            ],
+        },
+    )
+
+    result = QuestionOCRService().extract_segmented(
+        db_session, org_id=org.id, asset_id=asset.id
+    )
+    assert result.kind == "segmented"
+    assert len(result.questions) == 2
+    assert result.questions[0].stem == "Q1"
+
+
+def test_extract_segmented_raw_text_fallback(db_session, monkeypatch, tmp_path):
+    org = make_org(db_session)
+    staff = make_user(db_session, org, role=UserRole.org_staff)
+    image_path = tmp_path / "sheet.png"
+    image_path.write_bytes(b"fake sheet")
+    asset = MediaAsset(
+        org_id=org.id,
+        created_by=staff.id,
+        content_type="image/png",
+        storage_path=str(image_path),
+    )
+    db_session.add(asset)
+    db_session.commit()
+
+    monkeypatch.setattr(
+        QuestionOCRService,
+        "_extract_segmented",
+        lambda self, path, content_type, policy: {
+            "kind": "raw_text_fallback",
+            "raw_text": "1. First question ... 2. Second question ...",
+        },
+    )
+
+    result = QuestionOCRService().extract_segmented(
+        db_session, org_id=org.id, asset_id=asset.id
+    )
+    assert result.kind == "raw_text_fallback"
+    assert "First question" in result.raw_text
 
 
 def test_staff_uploads_image_then_extracts_question(
