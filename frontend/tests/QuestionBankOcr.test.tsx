@@ -25,50 +25,129 @@ describe("Question bank OCR import", () => {
     setToken("test-token");
   });
 
-  it("uploads and recognizes an image before enriching and creating the question", async () => {
+  it("segments one image into multiple drafts and batch submits", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo, init?: RequestInit) => {
       const url = String(input);
       if (url.endsWith("/org/question-bank/upload-image")) {
-        expect(init?.body).toBeInstanceOf(FormData);
         return new Response(
-          JSON.stringify({ asset_id: "asset-1", storage_key: "org-1/asset-1" }),
+          JSON.stringify({ asset_id: "asset-sheet", storage_key: "k" }),
           { status: 201 },
         );
       }
       if (url.endsWith("/org/question-bank/ocr")) {
-        expect(JSON.parse(String(init?.body))).toEqual({ asset_id: "asset-1" });
+        expect(JSON.parse(String(init?.body))).toEqual({
+          mode: "single_image_multi_question",
+          asset_ids: ["asset-sheet"],
+        });
         return new Response(
           JSON.stringify({
-            q_type: "multi_choice",
-            stem: "下列哪些是质数？",
-            choices: [
-              { key: "A", text: "2" },
-              { key: "B", text: "4" },
-              { key: "C", text: "5" },
+            mode: "segmented",
+            questions: [
+              {
+                q_type: "single_choice",
+                stem: "Q1",
+                choices: [{ key: "A", text: "1" }],
+                answer_key: "A",
+              },
+              {
+                q_type: "short_answer",
+                stem: "Q2",
+                choices: null,
+                answer_key: "x",
+              },
             ],
-            answer_key: "AC",
           }),
           { status: 200 },
         );
       }
       if (url.endsWith("/org/question-bank/enrich")) {
-        expect(JSON.parse(String(init?.body))).toMatchObject({
-          q_type: "multi_choice",
-          stem: "下列哪些是质数？",
-          choices: [
-            { key: "A", text: "2" },
-            { key: "B", text: "4" },
-            { key: "C", text: "5" },
-          ],
-          answer_key: "AC",
-        });
         return new Response(
           JSON.stringify({
-            subject_code: "math",
+            subject_code: "english",
             knowledge_node_id: null,
             difficulty: 2,
-            analysis_text: "2 和 5 只能被 1 和自身整除。",
-            q_type: "multi_choice",
+            analysis_text: "analysis",
+            q_type: null,
+          }),
+          { status: 200 },
+        );
+      }
+      if (url.endsWith("/org/question-bank") && init?.method === "POST") {
+        const body = JSON.parse(String(init?.body));
+        return new Response(
+          JSON.stringify({
+            id: `q-${body.stem}`,
+            stem: body.stem,
+            status: "pending_review",
+          }),
+          { status: 201 },
+        );
+      }
+      if (url.includes("/org/question-bank")) {
+        return new Response(JSON.stringify([]), { status: 200 });
+      }
+      return new Response("not found", { status: 404 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderPage();
+    fireEvent.click(screen.getByRole("button", { name: "新建题目" }));
+    fireEvent.click(screen.getByRole("button", { name: "图片识别添加" }));
+    fireEvent.click(screen.getByRole("button", { name: "一图多题" }));
+    fireEvent.change(screen.getByLabelText("题目图片"), {
+      target: {
+        files: [new File(["img"], "sheet.png", { type: "image/png" })],
+      },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "开始识别" }));
+
+    await waitFor(() => {
+      expect(screen.getByDisplayValue("Q1")).toBeInTheDocument();
+      expect(screen.getByDisplayValue("Q2")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "批量智能补全" }));
+    await waitFor(() =>
+      expect(screen.getAllByText("english").length).toBeGreaterThan(0),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "批量提交" }));
+    await waitFor(() => {
+      const creates = fetchMock.mock.calls.filter(
+        ([url, init]) =>
+          String(url).endsWith("/org/question-bank") &&
+          init?.method === "POST",
+      );
+      expect(creates).toHaveLength(2);
+    });
+  });
+
+  it("shows raw OCR text and lets user manually add drafts", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith("/org/question-bank/upload-image")) {
+        return new Response(
+          JSON.stringify({ asset_id: "asset-raw", storage_key: "raw-key" }),
+          { status: 201 },
+        );
+      }
+      if (url.endsWith("/org/question-bank/ocr")) {
+        return new Response(
+          JSON.stringify({
+            mode: "raw_text_fallback",
+            raw_text: "第一题：请手工整理这段识别文本",
+          }),
+          { status: 200 },
+        );
+      }
+      if (url.endsWith("/org/question-bank/enrich")) {
+        return new Response(
+          JSON.stringify({
+            subject_code: "english",
+            knowledge_node_id: null,
+            difficulty: 2,
+            analysis_text: "analysis",
+            q_type: null,
           }),
           { status: 200 },
         );
@@ -76,10 +155,8 @@ describe("Question bank OCR import", () => {
       if (url.endsWith("/org/question-bank") && init?.method === "POST") {
         return new Response(
           JSON.stringify({
-            id: "q-ocr",
-            stem: "下列哪些是质数？",
-            subject_code: "math",
-            q_type: "multi_choice",
+            id: "q-manual-draft",
+            stem: "整理后的题目",
             status: "pending_review",
           }),
           { status: 201 },
@@ -96,163 +173,40 @@ describe("Question bank OCR import", () => {
     fireEvent.click(screen.getByRole("button", { name: "新建题目" }));
     fireEvent.click(screen.getByRole("button", { name: "图片识别添加" }));
     fireEvent.change(screen.getByLabelText("题目图片"), {
-      target: { files: [new File(["image"], "question.png", { type: "image/png" })] },
+      target: {
+        files: [new File(["img"], "raw.png", { type: "image/png" })],
+      },
     });
     fireEvent.click(screen.getByRole("button", { name: "开始识别" }));
 
     await waitFor(() =>
-      expect(screen.getByLabelText("题干")).toHaveValue("下列哪些是质数？"),
+      expect(
+        screen.getByDisplayValue("第一题：请手工整理这段识别文本"),
+      ).toBeInTheDocument(),
     );
-    expect(screen.getByLabelText("题型")).toHaveValue("multi_choice");
-    expect(screen.getByLabelText("选项（每行一个）")).toHaveValue(
-      "A. 2\nB. 4\nC. 5",
-    );
-    expect(screen.getByLabelText("答案")).toHaveValue("AC");
-
-    fireEvent.click(screen.getByRole("button", { name: "智能补全" }));
-    await waitFor(() =>
-      expect(screen.getByRole("heading", { name: "确认题目信息" })).toBeTruthy(),
-    );
-    fireEvent.click(screen.getByRole("button", { name: "确认入库" }));
+    fireEvent.click(screen.getByRole("button", { name: "新增题目" }));
+    fireEvent.change(screen.getByLabelText("题干"), {
+      target: { value: "整理后的题目" },
+    });
+    fireEvent.change(screen.getByLabelText("参考答案"), {
+      target: { value: "答案" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "批量智能补全" }));
+    await waitFor(() => expect(screen.getByText("english")).toBeInTheDocument());
+    fireEvent.click(screen.getByRole("button", { name: "批量提交" }));
 
     await waitFor(() => {
       const createCall = fetchMock.mock.calls.find(
         ([url, init]) =>
-          String(url).endsWith("/org/question-bank") && init?.method === "POST",
+          String(url).endsWith("/org/question-bank") &&
+          init?.method === "POST",
       );
       expect(createCall).toBeTruthy();
+      expect(JSON.parse(String(createCall![1]?.body))).toMatchObject({
+        stem: "整理后的题目",
+        source_type: "ocr_import",
+        source_image_asset_id: "asset-raw",
+      });
     });
-    const createCall = fetchMock.mock.calls.find(
-      ([url, init]) =>
-        String(url).endsWith("/org/question-bank") && init?.method === "POST",
-    );
-    expect(JSON.parse(String(createCall![1]?.body))).toMatchObject({
-      source_type: "ocr_import",
-      source_image_asset_id: "asset-1",
-      q_type: "multi_choice",
-      choices: [
-        { key: "A", text: "2" },
-        { key: "B", text: "4" },
-        { key: "C", text: "5" },
-      ],
-    });
-  });
-
-  it("disables enrich until OCR recognition succeeds", async () => {
-    const fetchMock = vi.fn(async (input: RequestInfo) => {
-      const url = String(input);
-      if (url.includes("/org/question-bank")) {
-        return new Response(JSON.stringify([]), { status: 200 });
-      }
-      return new Response("not found", { status: 404 });
-    });
-    vi.stubGlobal("fetch", fetchMock);
-
-    renderPage();
-    fireEvent.click(screen.getByRole("button", { name: "新建题目" }));
-    fireEvent.click(screen.getByRole("button", { name: "图片识别添加" }));
-    fireEvent.change(screen.getByLabelText("题干"), {
-      target: { value: "手工填的题干" },
-    });
-    fireEvent.change(screen.getByLabelText("参考答案"), {
-      target: { value: "1" },
-    });
-
-    const enrich = screen.getByRole("button", { name: "智能补全" });
-    expect(enrich).toBeDisabled();
-    expect(screen.getByText("请先完成图片识别")).toBeTruthy();
-  });
-
-  it("disables enrich while retrying OCR after an earlier success", async () => {
-    let uploadCount = 0;
-    const fetchMock = vi.fn(async (input: RequestInfo) => {
-      const url = String(input);
-      if (url.endsWith("/org/question-bank/upload-image")) {
-        uploadCount += 1;
-        if (uploadCount === 2) {
-          return new Promise<Response>(() => {});
-        }
-        return new Response(
-          JSON.stringify({ asset_id: "asset-1", storage_key: "org-1/asset-1" }),
-          { status: 201 },
-        );
-      }
-      if (url.endsWith("/org/question-bank/ocr")) {
-        return new Response(
-          JSON.stringify({
-            q_type: "short_answer",
-            stem: "第一次识别成功",
-            answer_key: "答案",
-          }),
-          { status: 200 },
-        );
-      }
-      if (url.includes("/org/question-bank")) {
-        return new Response(JSON.stringify([]), { status: 200 });
-      }
-      return new Response("not found", { status: 404 });
-    });
-    vi.stubGlobal("fetch", fetchMock);
-
-    renderPage();
-    fireEvent.click(screen.getByRole("button", { name: "新建题目" }));
-    fireEvent.click(screen.getByRole("button", { name: "图片识别添加" }));
-    fireEvent.change(screen.getByLabelText("题目图片"), {
-      target: { files: [new File(["image"], "question.png", { type: "image/png" })] },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "开始识别" }));
-
-    const enrich = screen.getByRole("button", { name: "智能补全" });
-    await waitFor(() => expect(enrich).toBeEnabled());
-
-    fireEvent.click(screen.getByRole("button", { name: "开始识别" }));
-
-    await waitFor(() => expect(enrich).toBeDisabled());
-    expect(screen.getByText("请先完成图片识别")).toBeTruthy();
-  });
-
-  it("disables enrich after replacing the image before re-recognizing", async () => {
-    const fetchMock = vi.fn(async (input: RequestInfo) => {
-      const url = String(input);
-      if (url.endsWith("/org/question-bank/upload-image")) {
-        return new Response(
-          JSON.stringify({ asset_id: "asset-1", storage_key: "org-1/asset-1" }),
-          { status: 201 },
-        );
-      }
-      if (url.endsWith("/org/question-bank/ocr")) {
-        return new Response(
-          JSON.stringify({
-            q_type: "short_answer",
-            stem: "第一次识别成功",
-            answer_key: "答案",
-          }),
-          { status: 200 },
-        );
-      }
-      if (url.includes("/org/question-bank")) {
-        return new Response(JSON.stringify([]), { status: 200 });
-      }
-      return new Response("not found", { status: 404 });
-    });
-    vi.stubGlobal("fetch", fetchMock);
-
-    renderPage();
-    fireEvent.click(screen.getByRole("button", { name: "新建题目" }));
-    fireEvent.click(screen.getByRole("button", { name: "图片识别添加" }));
-    fireEvent.change(screen.getByLabelText("题目图片"), {
-      target: { files: [new File(["image"], "question.png", { type: "image/png" })] },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "开始识别" }));
-
-    const enrich = screen.getByRole("button", { name: "智能补全" });
-    await waitFor(() => expect(enrich).toBeEnabled());
-
-    fireEvent.change(screen.getByLabelText("题目图片"), {
-      target: { files: [new File(["other"], "other.png", { type: "image/png" })] },
-    });
-
-    expect(enrich).toBeDisabled();
-    expect(screen.getByText("请先完成图片识别")).toBeTruthy();
   });
 });
