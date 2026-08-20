@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 
 from fastapi import HTTPException, status
 from sqlalchemy import case, func, or_, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.models import MediaAsset, QuestionBankItem, SyllabusNode, User, UserRole
@@ -12,6 +13,7 @@ from app.schemas.question_bank import QuestionBankCreate
 
 
 _UNSET = object()
+_EXACT_DEDUPE_INDEX = "uq_qbi_exact_dedupe"
 
 
 class QuestionBankService:
@@ -149,7 +151,7 @@ class QuestionBankService:
             source_image_asset_id=source_image_asset_id,
         )
         db.add(item)
-        db.flush()
+        self._flush_or_raise_duplicate(db)
         return item
 
     def list(
@@ -295,7 +297,7 @@ class QuestionBankService:
             item.reviewed_by = None
             item.reviewed_at = None
 
-        db.flush()
+        self._flush_or_raise_duplicate(db)
         return item
 
     def approve(
@@ -309,7 +311,7 @@ class QuestionBankService:
         self._require_status(item, "pending_review")
         item.status = "active"
         self._record_review(item, actor)
-        db.flush()
+        self._flush_or_raise_duplicate(db)
         return item
 
     def reject(
@@ -386,6 +388,20 @@ class QuestionBankService:
             )
             .limit(1)
         ).scalars().first()
+
+    @staticmethod
+    def _flush_or_raise_duplicate(db: Session) -> None:
+        try:
+            db.flush()
+        except IntegrityError as exc:
+            message = str(exc.orig) if exc.orig is not None else str(exc)
+            if _EXACT_DEDUPE_INDEX in message:
+                db.rollback()
+                raise HTTPException(
+                    status.HTTP_409_CONFLICT,
+                    "exact question bank duplicate",
+                ) from exc
+            raise
 
     @staticmethod
     def _require_staff(actor: User) -> None:

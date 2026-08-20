@@ -1,11 +1,13 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, Text, func
+from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, Text, func, text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
+
+_GLOBAL_ORG_SENTINEL = "00000000-0000-0000-0000-000000000000"
 
 
 class MediaAsset(Base):
@@ -78,5 +80,14 @@ class QuestionBankItem(Base):
             "org_id",
             "q_type",
             func.btrim(stem),
+        ),
+        Index(
+            "uq_qbi_exact_dedupe",
+            "scope",
+            func.coalesce(org_id, text(f"'{_GLOBAL_ORG_SENTINEL}'::uuid")),
+            "q_type",
+            func.btrim(stem),
+            unique=True,
+            postgresql_where=text("status IN ('active', 'pending_review')"),
         ),
     )

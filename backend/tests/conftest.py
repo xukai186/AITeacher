@@ -84,6 +84,23 @@ def _sync_test_schema(connection, *, commit: bool = False) -> None:
             connection.execute(
                 text("ALTER TABLE self_test_questions ADD COLUMN selection_source VARCHAR(40) NULL")
             )
+    if "question_bank_items" in insp.get_table_names():
+        index_names = {idx["name"] for idx in insp.get_indexes("question_bank_items")}
+        if "uq_qbi_exact_dedupe" not in index_names:
+            connection.execute(
+                text(
+                    """
+                    CREATE UNIQUE INDEX uq_qbi_exact_dedupe
+                    ON question_bank_items (
+                        scope,
+                        COALESCE(org_id, '00000000-0000-0000-0000-000000000000'::uuid),
+                        q_type,
+                        (btrim(stem))
+                    )
+                    WHERE status IN ('active', 'pending_review')
+                    """
+                )
+            )
     if commit:
         connection.commit()
 
