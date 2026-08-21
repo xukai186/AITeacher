@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import {
   createQuestion,
   enrichQuestion,
@@ -63,6 +63,7 @@ export default function QuestionBankOcrWorkbench({
   onSubmitted,
   onCancel,
 }: OcrWorkbenchProps) {
+  const nextDraftId = useRef(0);
   const [file, setFile] = useState<File | null>(null);
   const [sourceAssetId, setSourceAssetId] = useState<string | null>(null);
   const [drafts, setDrafts] = useState<OcrDraftItem[]>([]);
@@ -301,7 +302,7 @@ export default function QuestionBankOcrWorkbench({
             onClick={() =>
               setDrafts((current) => [
                 ...current,
-                emptyDraft(`manual-${current.length}`),
+                emptyDraft(`manual-${nextDraftId.current++}`),
               ])
             }
             className="rounded border px-3 py-2"
