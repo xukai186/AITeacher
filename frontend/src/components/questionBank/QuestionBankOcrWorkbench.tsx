@@ -7,6 +7,7 @@ import {
   recognizeQuestions,
   uploadQuestionImage,
 } from "@/api/questionBank";
+import KnowledgeNodeSelect from "./KnowledgeNodeSelect";
 
 type OcrWorkbenchProps = {
   role: QuestionBankRole;
@@ -29,6 +30,12 @@ type OcrDraftItem = {
 };
 
 const OBJECTIVE_TYPES = new Set(["single_choice", "multi_choice"]);
+
+const SUBJECT_OPTIONS = [
+  ["politics", "政治"],
+  ["english", "英语"],
+  ["math", "数学"],
+] as const;
 
 function parseChoices(value: string) {
   return value
@@ -55,6 +62,27 @@ function emptyDraft(localId: string): OcrDraftItem {
     choicesText: "",
     answerKey: "",
     enrichment: null,
+  };
+}
+
+function isEnrichmentReady(enrichment?: Enrichment | null) {
+  return Boolean(
+    enrichment?.subject_code &&
+      typeof enrichment.difficulty === "number" &&
+      enrichment.difficulty >= 1 &&
+      enrichment.difficulty <= 5,
+  );
+}
+
+function defaultEnrichment(partial?: Partial<Enrichment>): Enrichment {
+  return {
+    subject_code: "",
+    knowledge_node_id: null,
+    // 0 = unset; isEnrichmentReady requires 1–5
+    difficulty: 0,
+    analysis_text: null,
+    q_type: null,
+    ...partial,
   };
 }
 
@@ -104,13 +132,31 @@ export default function QuestionBankOcrWorkbench({
           ? {
               ...draft,
               ...update,
-              enrichment:
-                "enrichment" in update ? update.enrichment : null,
               enrichError: null,
               submitError: null,
             }
           : draft,
       ),
+    );
+  };
+
+  const patchEnrichment = (
+    localId: string,
+    patch: Partial<Enrichment>,
+  ) => {
+    setDrafts((current) =>
+      current.map((draft) => {
+        if (draft.localId !== localId) return draft;
+        return {
+          ...draft,
+          enrichment: {
+            ...(draft.enrichment ?? defaultEnrichment()),
+            ...patch,
+          },
+          enrichError: null,
+          submitError: null,
+        };
+      }),
     );
   };
 
@@ -198,15 +244,15 @@ export default function QuestionBankOcrWorkbench({
     }
   };
 
-  const enrichAll = async () => {
-    const targets = drafts.filter((draft) => !draft.submitted);
+  const runEnrich = async (targets: OcrDraftItem[]) => {
     if (!targets.length) return;
     setEnriching(true);
     setDrafts((current) =>
-      current.map((draft) => ({
-        ...draft,
-        enrichError: draft.submitted ? draft.enrichError : null,
-      })),
+      current.map((draft) =>
+        targets.some((target) => target.localId === draft.localId)
+          ? { ...draft, enrichError: null }
+          : draft,
+      ),
     );
     const results = await Promise.allSettled(
       targets.map((draft) =>
@@ -230,7 +276,6 @@ export default function QuestionBankOcrWorkbench({
         if (result.status === "rejected") {
           return {
             ...draft,
-            enrichment: null,
             enrichError: errorMessage(result.reason),
           };
         }
@@ -245,10 +290,23 @@ export default function QuestionBankOcrWorkbench({
     setEnriching(false);
   };
 
+  const enrichAll = async () => {
+    await runEnrich(drafts.filter((draft) => !draft.submitted));
+  };
+
+  const enrichOne = async (localId: string) => {
+    const draft = drafts.find((item) => item.localId === localId);
+    if (!draft || draft.submitted) return;
+    await runEnrich([draft]);
+  };
+
   const submitAll = async () => {
     if (!sourceAssetId) return;
     const targets = drafts.filter(
-      (draft) => !draft.submitted && draft.enrichment,
+      (draft) =>
+        !draft.submitted &&
+        draft.stem.trim() &&
+        isEnrichmentReady(draft.enrichment),
     );
     if (!targets.length) return;
     const generation = ++submissionGeneration.current;
@@ -325,7 +383,7 @@ export default function QuestionBankOcrWorkbench({
     Boolean(sourceAssetId) &&
     pendingDrafts.length > 0 &&
     pendingDrafts.every(
-      (draft) => draft.enrichment && draft.stem.trim(),
+      (draft) => draft.stem.trim() && isEnrichmentReady(draft.enrichment),
     );
   const operationLocked = recognizing || enriching || submitting;
 
@@ -520,16 +578,95 @@ export default function QuestionBankOcrWorkbench({
               className="w-full rounded border px-3 py-2"
             />
           </label>
-          {draft.enrichment ? (
-            <div className="rounded bg-slate-50 p-3 text-sm">
-              <span>{draft.enrichment.subject_code}</span>
-              <span className="ml-3">难度 {draft.enrichment.difficulty}</span>
-            </div>
-          ) : null}
+          <label className="block space-y-1">
+            <span>科目</span>
+            <select
+              value={draft.enrichment?.subject_code ?? ""}
+              disabled={draft.submitted || enriching || submitting}
+              onChange={(event) =>
+                patchEnrichment(draft.localId, {
+                  subject_code: event.target.value,
+                  knowledge_node_id: null,
+                  knowledge_node_name: null,
+                })
+              }
+              className="w-full rounded border px-3 py-2"
+              aria-label="科目"
+            >
+              <option value="">请选择科目</option>
+              {SUBJECT_OPTIONS.map(([value, label]) => (
+                <option key={value} value={value}>
+                  {label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="block space-y-1">
+            <span>知识点</span>
+            <KnowledgeNodeSelect
+              subjectCode={draft.enrichment?.subject_code ?? ""}
+              value={draft.enrichment?.knowledge_node_id ?? null}
+              disabled={draft.submitted || enriching || submitting}
+              onChange={(id) =>
+                patchEnrichment(draft.localId, {
+                  knowledge_node_id: id,
+                  knowledge_node_name: null,
+                })
+              }
+            />
+          </label>
+          <label className="block space-y-1">
+            <span>难度（1-5）</span>
+            <input
+              type="number"
+              min={1}
+              max={5}
+              value={
+                draft.enrichment &&
+                draft.enrichment.difficulty >= 1 &&
+                draft.enrichment.difficulty <= 5
+                  ? draft.enrichment.difficulty
+                  : ""
+              }
+              disabled={draft.submitted || enriching || submitting}
+              onChange={(event) =>
+                patchEnrichment(draft.localId, {
+                  difficulty: Number(event.target.value),
+                })
+              }
+              className="w-full rounded border px-3 py-2"
+              aria-label="难度"
+            />
+          </label>
+          <label className="block space-y-1">
+            <span>解析</span>
+            <textarea
+              value={draft.enrichment?.analysis_text ?? ""}
+              disabled={draft.submitted || enriching || submitting}
+              onChange={(event) =>
+                patchEnrichment(draft.localId, {
+                  analysis_text: event.target.value || null,
+                })
+              }
+              rows={3}
+              className="w-full rounded border px-3 py-2"
+              aria-label="解析"
+            />
+          </label>
           {draft.enrichError ? (
-            <p role="alert" className="text-sm text-red-600">
-              智能补全失败：{draft.enrichError}
-            </p>
+            <div className="space-y-2">
+              <p role="alert" className="text-sm text-red-600">
+                智能补全失败：{draft.enrichError}
+              </p>
+              <button
+                type="button"
+                disabled={enriching || submitting || draft.submitted}
+                onClick={() => enrichOne(draft.localId)}
+                className="rounded border px-3 py-1.5 text-sm disabled:opacity-50"
+              >
+                重试补全
+              </button>
+            </div>
           ) : null}
           {draft.submitError ? (
             <p role="alert" className="text-sm text-red-600">

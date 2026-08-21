@@ -108,9 +108,12 @@ describe("Question bank OCR import", () => {
     });
 
     fireEvent.click(screen.getByRole("button", { name: "批量智能补全" }));
-    await waitFor(() =>
-      expect(screen.getAllByText("english").length).toBeGreaterThan(0),
-    );
+    await waitFor(() => {
+      const subjects = screen.getAllByLabelText("科目");
+      expect(subjects).toHaveLength(2);
+      expect(subjects[0]).toHaveValue("english");
+      expect(subjects[1]).toHaveValue("english");
+    });
 
     fireEvent.click(screen.getByRole("button", { name: "批量提交" }));
     await waitFor(() => {
@@ -120,6 +123,12 @@ describe("Question bank OCR import", () => {
           init?.method === "POST",
       );
       expect(creates).toHaveLength(2);
+      for (const [, init] of creates) {
+        expect(JSON.parse(String(init?.body))).toMatchObject({
+          source_type: "ocr_import",
+          source_image_asset_id: "asset-sheet",
+        });
+      }
     });
   });
 
@@ -193,7 +202,9 @@ describe("Question bank OCR import", () => {
       target: { value: "答案" },
     });
     fireEvent.click(screen.getByRole("button", { name: "批量智能补全" }));
-    await waitFor(() => expect(screen.getByText("english")).toBeInTheDocument());
+    await waitFor(() =>
+      expect(screen.getByLabelText("科目")).toHaveValue("english"),
+    );
     fireEvent.click(screen.getByRole("button", { name: "批量提交" }));
 
     await waitFor(() => {
@@ -344,7 +355,9 @@ describe("Question bank OCR import", () => {
       expect(screen.getByDisplayValue("待提交题目")).toBeInTheDocument(),
     );
     fireEvent.click(screen.getByRole("button", { name: "批量智能补全" }));
-    await waitFor(() => expect(screen.getByText("english")).toBeInTheDocument());
+    await waitFor(() =>
+      expect(screen.getByLabelText("科目")).toHaveValue("english"),
+    );
     fireEvent.click(screen.getByRole("button", { name: "批量提交" }));
 
     await waitFor(() => {
@@ -425,7 +438,9 @@ describe("Question bank OCR import", () => {
       expect(screen.getByDisplayValue("全局题目")).toBeInTheDocument(),
     );
     fireEvent.click(screen.getByRole("button", { name: "批量智能补全" }));
-    await waitFor(() => expect(screen.getByText("english")).toBeInTheDocument());
+    await waitFor(() =>
+      expect(screen.getByLabelText("科目")).toHaveValue("english"),
+    );
     fireEvent.click(screen.getByRole("button", { name: "批量提交" }));
 
     await waitFor(() => {
@@ -473,6 +488,28 @@ describe("Question bank OCR import", () => {
           { status: 200 },
         );
       }
+      if (url.endsWith("/org/question-bank/enrich")) {
+        return new Response(
+          JSON.stringify({
+            subject_code: "english",
+            knowledge_node_id: null,
+            difficulty: 2,
+            analysis_text: "analysis",
+            q_type: null,
+          }),
+          { status: 200 },
+        );
+      }
+      if (url.endsWith("/org/question-bank") && init?.method === "POST") {
+        return new Response(
+          JSON.stringify({
+            id: "q-merged",
+            stem: "Merged stem",
+            status: "pending_review",
+          }),
+          { status: 201 },
+        );
+      }
       if (url.includes("/org/question-bank")) {
         return new Response(JSON.stringify([]), { status: 200 });
       }
@@ -502,7 +539,25 @@ describe("Question bank OCR import", () => {
       String(url).endsWith("/org/question-bank/ocr"),
     );
     expect(ocrCalls).toHaveLength(1);
+
+    fireEvent.click(screen.getByRole("button", { name: "批量智能补全" }));
+    await waitFor(() =>
+      expect(screen.getByLabelText("科目")).toHaveValue("english"),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "批量提交" }));
+
+    await waitFor(() => {
+      const createCall = fetchMock.mock.calls.find(
+        ([url, init]) =>
+          String(url).endsWith("/org/question-bank") &&
+          init?.method === "POST",
+      );
+      expect(createCall).toBeTruthy();
+      expect(JSON.parse(String(createCall![1]?.body))).toMatchObject({
+        stem: "Merged stem",
+        source_type: "ocr_import",
+        source_image_asset_id: "asset-1",
+      });
+    });
   });
-
-
 });
