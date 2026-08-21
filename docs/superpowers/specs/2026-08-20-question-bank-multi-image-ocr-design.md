@@ -1,7 +1,7 @@
 # 题库多图 OCR 工作台 — 产品设计规格
 
 **日期：** 2026-08-20  
-**状态：** 待实现  
+**状态：** 已实现  
 **依赖：** 全局题库 P1–P3、OCR 守卫与软删除、并发精确去重  
 **关联：** `docs/superpowers/specs/2026-08-04-global-question-bank-design.md` §5.3、§9，`docs/superpowers/specs/2026-08-13-question-bank-ocr-guard-soft-delete-design.md`，`docs/superpowers/specs/2026-08-20-question-bank-concurrent-dedupe-design.md`
 
