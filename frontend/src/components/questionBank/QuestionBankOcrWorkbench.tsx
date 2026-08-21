@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   createQuestion,
   enrichQuestion,
@@ -13,6 +13,7 @@ type OcrWorkbenchProps = {
   scope: "org" | "global";
   onSubmitted: () => void;
   onCancel: () => void;
+  onSubmittingChange?: (submitting: boolean) => void;
 };
 
 type OcrDraftItem = {
@@ -62,9 +63,14 @@ export default function QuestionBankOcrWorkbench({
   scope,
   onSubmitted,
   onCancel,
+  onSubmittingChange,
 }: OcrWorkbenchProps) {
   const nextDraftId = useRef(0);
   const recognitionGeneration = useRef(0);
+  const submissionGeneration = useRef(0);
+  const mounted = useRef(true);
+  const onSubmittingChangeRef = useRef(onSubmittingChange);
+  onSubmittingChangeRef.current = onSubmittingChange;
   const [file, setFile] = useState<File | null>(null);
   const [sourceAssetId, setSourceAssetId] = useState<string | null>(null);
   const [drafts, setDrafts] = useState<OcrDraftItem[]>([]);
@@ -75,6 +81,15 @@ export default function QuestionBankOcrWorkbench({
   const [recognizeError, setRecognizeError] = useState<string | null>(null);
   const draftsRef = useRef(drafts);
   draftsRef.current = drafts;
+
+  useEffect(
+    () => () => {
+      mounted.current = false;
+      submissionGeneration.current += 1;
+      onSubmittingChangeRef.current?.(false);
+    },
+    [],
+  );
 
   const replaceDraft = (
     localId: string,
@@ -198,7 +213,9 @@ export default function QuestionBankOcrWorkbench({
       (draft) => !draft.submitted && draft.enrichment,
     );
     if (!targets.length) return;
+    const generation = ++submissionGeneration.current;
     setSubmitting(true);
+    onSubmittingChangeRef.current?.(true);
     const submittedIds = new Set<string>();
     const submitErrors = new Map<string, string>();
     for (const draft of targets) {
@@ -218,10 +235,25 @@ export default function QuestionBankOcrWorkbench({
           source_type: "ocr_import",
           source_image_asset_id: sourceAssetId,
         });
+        if (
+          !mounted.current ||
+          generation !== submissionGeneration.current
+        ) {
+          return;
+        }
         submittedIds.add(draft.localId);
       } catch (error) {
+        if (
+          !mounted.current ||
+          generation !== submissionGeneration.current
+        ) {
+          return;
+        }
         submitErrors.set(draft.localId, errorMessage(error));
       }
+    }
+    if (!mounted.current || generation !== submissionGeneration.current) {
+      return;
     }
     setDrafts((current) =>
       current.map((draft) => ({
@@ -231,6 +263,7 @@ export default function QuestionBankOcrWorkbench({
       })),
     );
     setSubmitting(false);
+    onSubmittingChangeRef.current?.(false);
     const allSnapshotDraftsSucceeded = targets.every((draft) =>
       submittedIds.has(draft.localId),
     );
@@ -239,7 +272,12 @@ export default function QuestionBankOcrWorkbench({
       draftsRef.current.every(
         (draft) => draft.submitted || submittedIds.has(draft.localId),
       );
-    if (allSnapshotDraftsSucceeded && currentDraftsAreComplete) {
+    if (
+      mounted.current &&
+      generation === submissionGeneration.current &&
+      allSnapshotDraftsSucceeded &&
+      currentDraftsAreComplete
+    ) {
       onSubmitted();
     }
   };
@@ -435,7 +473,12 @@ export default function QuestionBankOcrWorkbench({
       ))}
 
       <div className="flex justify-end gap-3">
-        <button type="button" onClick={onCancel} className="px-4 py-2">
+        <button
+          type="button"
+          disabled={submitting}
+          onClick={onCancel}
+          className="px-4 py-2 disabled:opacity-50"
+        >
           取消
         </button>
         <button

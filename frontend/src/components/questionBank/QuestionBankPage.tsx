@@ -224,6 +224,7 @@ export default function QuestionBankPage({ role }: { role: QuestionBankRole }) {
   const [hasMore, setHasMore] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
   const [createMode, setCreateMode] = useState<"manual" | "ocr">("manual");
+  const [ocrSubmitting, setOcrSubmitting] = useState(false);
   const [draft, setDraft] = useState<Draft>(EMPTY_DRAFT);
   const [confirmation, setConfirmation] = useState<Enrichment | null>(null);
   const [scope, setScope] = useState<"org" | "global">("org");
@@ -333,6 +334,7 @@ export default function QuestionBankPage({ role }: { role: QuestionBankRole }) {
   const closeCreate = () => {
     setShowCreate(false);
     setCreateMode("manual");
+    setOcrSubmitting(false);
     setDraft(EMPTY_DRAFT);
     setConfirmation(null);
     enrichMutation.reset();
@@ -341,6 +343,7 @@ export default function QuestionBankPage({ role }: { role: QuestionBankRole }) {
 
   const selectCreateMode = (mode: "manual" | "ocr") => {
     setCreateMode(mode);
+    setOcrSubmitting(false);
     setDraft(EMPTY_DRAFT);
     setConfirmation(null);
     enrichMutation.reset();
@@ -573,19 +576,38 @@ export default function QuestionBankPage({ role }: { role: QuestionBankRole }) {
                 <div className="flex gap-2 border-b pb-3">
                   <button
                     type="button"
+                    disabled={ocrSubmitting}
                     onClick={() => selectCreateMode("manual")}
-                    className="rounded bg-slate-100 px-3 py-2"
+                    className="rounded bg-slate-100 px-3 py-2 disabled:opacity-50"
                   >
                     手工添加
                   </button>
                   <button
                     type="button"
+                    disabled={ocrSubmitting}
                     onClick={() => selectCreateMode("ocr")}
-                    className="rounded bg-slate-900 px-3 py-2 text-white"
+                    className="rounded bg-slate-900 px-3 py-2 text-white disabled:opacity-50"
                   >
                     图片识别添加
                   </button>
                 </div>
+                {role === "org_admin" ? (
+                  <label className="block space-y-1">
+                    <span>归属</span>
+                    <select
+                      aria-label="归属"
+                      value={scope}
+                      disabled={ocrSubmitting}
+                      onChange={(event) =>
+                        setScope(event.target.value as "org" | "global")
+                      }
+                      className="w-full rounded border px-3 py-2 disabled:opacity-50"
+                    >
+                      <option value="org">本机构</option>
+                      <option value="global">平台公共</option>
+                    </select>
+                  </label>
+                ) : null}
                 <QuestionBankOcrWorkbench
                   role={role}
                   scope={scope}
@@ -597,6 +619,7 @@ export default function QuestionBankPage({ role }: { role: QuestionBankRole }) {
                     });
                   }}
                   onCancel={closeCreate}
+                  onSubmittingChange={setOcrSubmitting}
                 />
               </div>
             ) : !confirmation ? (

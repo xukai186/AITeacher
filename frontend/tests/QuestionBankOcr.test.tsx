@@ -3,16 +3,17 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router-dom";
 import QuestionBankPage from "../src/components/questionBank/QuestionBankPage";
+import { QuestionBankRole } from "../src/api/questionBank";
 import { setToken } from "../src/api/client";
 
-function renderPage() {
+function renderPage(role: QuestionBankRole = "org_staff") {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
   return render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter>
-        <QuestionBankPage role="org_staff" />
+        <QuestionBankPage role={role} />
       </MemoryRouter>
     </QueryClientProvider>,
   );
@@ -281,5 +282,162 @@ describe("Question bank OCR import", () => {
     fireEvent.click(screen.getByRole("button", { name: "开始识别" }));
 
     await waitFor(() => expect(fileInput).toBeDisabled());
+  });
+
+  it("locks OCR exits while batch submission is pending", async () => {
+    const pendingCreate = new Promise<Response>(() => {});
+    const fetchMock = vi.fn(async (input: RequestInfo, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith("/org/question-bank/upload-image")) {
+        return new Response(
+          JSON.stringify({ asset_id: "asset-lock", storage_key: "lock-key" }),
+          { status: 201 },
+        );
+      }
+      if (url.endsWith("/org/question-bank/ocr")) {
+        return new Response(
+          JSON.stringify({
+            mode: "segmented",
+            questions: [
+              {
+                q_type: "short_answer",
+                stem: "待提交题目",
+                answer_key: "答案",
+              },
+            ],
+          }),
+          { status: 200 },
+        );
+      }
+      if (url.endsWith("/org/question-bank/enrich")) {
+        return new Response(
+          JSON.stringify({
+            subject_code: "english",
+            knowledge_node_id: null,
+            difficulty: 2,
+            analysis_text: "analysis",
+            q_type: null,
+          }),
+          { status: 200 },
+        );
+      }
+      if (url.endsWith("/org/question-bank") && init?.method === "POST") {
+        return pendingCreate;
+      }
+      if (url.includes("/org/question-bank")) {
+        return new Response(JSON.stringify([]), { status: 200 });
+      }
+      return new Response("not found", { status: 404 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderPage();
+    fireEvent.click(screen.getByRole("button", { name: "新建题目" }));
+    fireEvent.click(screen.getByRole("button", { name: "图片识别添加" }));
+    fireEvent.change(screen.getByLabelText("题目图片"), {
+      target: {
+        files: [new File(["img"], "lock.png", { type: "image/png" })],
+      },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "开始识别" }));
+    await waitFor(() =>
+      expect(screen.getByDisplayValue("待提交题目")).toBeInTheDocument(),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "批量智能补全" }));
+    await waitFor(() => expect(screen.getByText("english")).toBeInTheDocument());
+    fireEvent.click(screen.getByRole("button", { name: "批量提交" }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "取消" })).toBeDisabled();
+      expect(screen.getByRole("button", { name: "手工添加" })).toBeDisabled();
+      expect(
+        screen.getByRole("button", { name: "图片识别添加" }),
+      ).toBeDisabled();
+    });
+  });
+
+  it("submits the administrator-selected OCR scope", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith("/org/question-bank/upload-image")) {
+        return new Response(
+          JSON.stringify({ asset_id: "asset-scope", storage_key: "scope-key" }),
+          { status: 201 },
+        );
+      }
+      if (url.endsWith("/org/question-bank/ocr")) {
+        return new Response(
+          JSON.stringify({
+            mode: "segmented",
+            questions: [
+              {
+                q_type: "short_answer",
+                stem: "全局题目",
+                answer_key: "答案",
+              },
+            ],
+          }),
+          { status: 200 },
+        );
+      }
+      if (url.endsWith("/org/question-bank/enrich")) {
+        return new Response(
+          JSON.stringify({
+            subject_code: "english",
+            knowledge_node_id: null,
+            difficulty: 2,
+            analysis_text: "analysis",
+            q_type: null,
+          }),
+          { status: 200 },
+        );
+      }
+      if (url.endsWith("/org/question-bank") && init?.method === "POST") {
+        return new Response(
+          JSON.stringify({
+            id: "q-global",
+            stem: "全局题目",
+            status: "pending_review",
+          }),
+          { status: 201 },
+        );
+      }
+      if (url.includes("/org/question-bank")) {
+        return new Response(JSON.stringify([]), { status: 200 });
+      }
+      return new Response("not found", { status: 404 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderPage("org_admin");
+    fireEvent.click(screen.getByRole("button", { name: "新建题目" }));
+    fireEvent.click(screen.getByRole("button", { name: "图片识别添加" }));
+    fireEvent.change(screen.getByLabelText("归属"), {
+      target: { value: "global" },
+    });
+    fireEvent.change(screen.getByLabelText("题目图片"), {
+      target: {
+        files: [new File(["img"], "scope.png", { type: "image/png" })],
+      },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "开始识别" }));
+    await waitFor(() =>
+      expect(screen.getByDisplayValue("全局题目")).toBeInTheDocument(),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "批量智能补全" }));
+    await waitFor(() => expect(screen.getByText("english")).toBeInTheDocument());
+    fireEvent.click(screen.getByRole("button", { name: "批量提交" }));
+
+    await waitFor(() => {
+      const createCall = fetchMock.mock.calls.find(
+        ([url, init]) =>
+          String(url).endsWith("/org/question-bank") &&
+          init?.method === "POST",
+      );
+      expect(createCall).toBeTruthy();
+      expect(JSON.parse(String(createCall![1]?.body))).toMatchObject({
+        scope: "global",
+      });
+    });
   });
 });
