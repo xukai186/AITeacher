@@ -64,6 +64,7 @@ export default function QuestionBankOcrWorkbench({
   onCancel,
 }: OcrWorkbenchProps) {
   const nextDraftId = useRef(0);
+  const recognitionGeneration = useRef(0);
   const [file, setFile] = useState<File | null>(null);
   const [sourceAssetId, setSourceAssetId] = useState<string | null>(null);
   const [drafts, setDrafts] = useState<OcrDraftItem[]>([]);
@@ -72,6 +73,8 @@ export default function QuestionBankOcrWorkbench({
   const [enriching, setEnriching] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [recognizeError, setRecognizeError] = useState<string | null>(null);
+  const draftsRef = useRef(drafts);
+  draftsRef.current = drafts;
 
   const replaceDraft = (
     localId: string,
@@ -95,6 +98,7 @@ export default function QuestionBankOcrWorkbench({
 
   const recognize = async () => {
     if (!file) return;
+    const generation = ++recognitionGeneration.current;
     setRecognizing(true);
     setRecognizeError(null);
     setSourceAssetId(null);
@@ -102,19 +106,23 @@ export default function QuestionBankOcrWorkbench({
     setRawText(null);
     try {
       const uploaded = await uploadQuestionImage(file);
+      if (generation !== recognitionGeneration.current) return;
       const result = await recognizeQuestions(
         "single_image_multi_question",
         [uploaded.asset_id],
       );
-      setSourceAssetId(uploaded.asset_id);
+      if (generation !== recognitionGeneration.current) return;
       if (result.mode === "raw_text_fallback") {
+        setSourceAssetId(uploaded.asset_id);
         setRawText(result.raw_text);
         return;
       }
-      const questions =
-        result.mode === "segmented" ? result.questions : [result.question];
+      if (result.mode !== "segmented") {
+        throw new Error("识别结果模式异常，请重试");
+      }
+      setSourceAssetId(uploaded.asset_id);
       setDrafts(
-        questions.map((question, index) => ({
+        result.questions.map((question, index) => ({
           localId: `ocr-${index}`,
           stem: question.stem,
           qType: question.q_type,
@@ -127,9 +135,13 @@ export default function QuestionBankOcrWorkbench({
         })),
       );
     } catch (error) {
-      setRecognizeError(errorMessage(error));
+      if (generation === recognitionGeneration.current) {
+        setRecognizeError(errorMessage(error));
+      }
     } finally {
-      setRecognizing(false);
+      if (generation === recognitionGeneration.current) {
+        setRecognizing(false);
+      }
     }
   };
 
@@ -219,11 +231,15 @@ export default function QuestionBankOcrWorkbench({
       })),
     );
     setSubmitting(false);
-    if (
-      drafts.every(
+    const allSnapshotDraftsSucceeded = targets.every((draft) =>
+      submittedIds.has(draft.localId),
+    );
+    const currentDraftsAreComplete =
+      draftsRef.current.length === drafts.length &&
+      draftsRef.current.every(
         (draft) => draft.submitted || submittedIds.has(draft.localId),
-      )
-    ) {
+      );
+    if (allSnapshotDraftsSucceeded && currentDraftsAreComplete) {
       onSubmitted();
     }
   };
@@ -235,6 +251,7 @@ export default function QuestionBankOcrWorkbench({
     pendingDrafts.every(
       (draft) => draft.enrichment && draft.stem.trim(),
     );
+  const operationLocked = recognizing || enriching || submitting;
 
   return (
     <div className="space-y-4">
@@ -261,7 +278,10 @@ export default function QuestionBankOcrWorkbench({
           <input
             type="file"
             accept="image/*"
+            disabled={operationLocked}
             onChange={(event) => {
+              recognitionGeneration.current += 1;
+              setRecognizing(false);
               setFile(event.target.files?.[0] ?? null);
               setSourceAssetId(null);
               setDrafts([]);
@@ -273,7 +293,7 @@ export default function QuestionBankOcrWorkbench({
         </label>
         <button
           type="button"
-          disabled={!file || recognizing}
+          disabled={!file || operationLocked}
           onClick={recognize}
           className="rounded bg-slate-700 px-4 py-2 text-white disabled:opacity-50"
         >
@@ -299,6 +319,7 @@ export default function QuestionBankOcrWorkbench({
           </label>
           <button
             type="button"
+            disabled={enriching || submitting}
             onClick={() =>
               setDrafts((current) => [
                 ...current,
@@ -321,7 +342,7 @@ export default function QuestionBankOcrWorkbench({
             <h3 className="font-medium">题目 {index + 1}</h3>
             <button
               type="button"
-              disabled={draft.submitted}
+              disabled={draft.submitted || enriching || submitting}
               onClick={() =>
                 setDrafts((current) =>
                   current.filter((item) => item.localId !== draft.localId),
@@ -336,7 +357,7 @@ export default function QuestionBankOcrWorkbench({
             <span>题型</span>
             <select
               value={draft.qType}
-              disabled={draft.submitted}
+              disabled={draft.submitted || enriching || submitting}
               onChange={(event) =>
                 replaceDraft(draft.localId, { qType: event.target.value })
               }
@@ -352,7 +373,7 @@ export default function QuestionBankOcrWorkbench({
             <span>题干</span>
             <textarea
               value={draft.stem}
-              disabled={draft.submitted}
+              disabled={draft.submitted || enriching || submitting}
               onChange={(event) =>
                 replaceDraft(draft.localId, { stem: event.target.value })
               }
@@ -365,7 +386,7 @@ export default function QuestionBankOcrWorkbench({
               <span>选项（每行一个）</span>
               <textarea
                 value={draft.choicesText}
-                disabled={draft.submitted}
+                disabled={draft.submitted || enriching || submitting}
                 onChange={(event) =>
                   replaceDraft(draft.localId, {
                     choicesText: event.target.value,
@@ -382,7 +403,7 @@ export default function QuestionBankOcrWorkbench({
             </span>
             <input
               value={draft.answerKey}
-              disabled={draft.submitted}
+              disabled={draft.submitted || enriching || submitting}
               onChange={(event) =>
                 replaceDraft(draft.localId, {
                   answerKey: event.target.value,

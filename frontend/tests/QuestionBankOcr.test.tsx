@@ -209,4 +209,77 @@ describe("Question bank OCR import", () => {
       });
     });
   });
+
+  it("rejects an unexpected single-question response in segmented mode", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo) => {
+      const url = String(input);
+      if (url.endsWith("/org/question-bank/upload-image")) {
+        return new Response(
+          JSON.stringify({ asset_id: "asset-single", storage_key: "single-key" }),
+          { status: 201 },
+        );
+      }
+      if (url.endsWith("/org/question-bank/ocr")) {
+        return new Response(
+          JSON.stringify({
+            mode: "single_question",
+            question: {
+              q_type: "short_answer",
+              stem: "不应自动接受",
+              answer_key: "x",
+            },
+          }),
+          { status: 200 },
+        );
+      }
+      if (url.includes("/org/question-bank")) {
+        return new Response(JSON.stringify([]), { status: 200 });
+      }
+      return new Response("not found", { status: 404 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderPage();
+    fireEvent.click(screen.getByRole("button", { name: "新建题目" }));
+    fireEvent.click(screen.getByRole("button", { name: "图片识别添加" }));
+    fireEvent.change(screen.getByLabelText("题目图片"), {
+      target: {
+        files: [new File(["img"], "single.png", { type: "image/png" })],
+      },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "开始识别" }));
+
+    await waitFor(() =>
+      expect(screen.getByRole("alert")).toHaveTextContent("识别结果模式异常"),
+    );
+    expect(screen.queryByDisplayValue("不应自动接受")).not.toBeInTheDocument();
+  });
+
+  it("locks image replacement while recognition is pending", async () => {
+    const pendingUpload = new Promise<Response>(() => {});
+    const fetchMock = vi.fn(async (input: RequestInfo) => {
+      const url = String(input);
+      if (url.endsWith("/org/question-bank/upload-image")) {
+        return pendingUpload;
+      }
+      if (url.includes("/org/question-bank")) {
+        return new Response(JSON.stringify([]), { status: 200 });
+      }
+      return new Response("not found", { status: 404 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderPage();
+    fireEvent.click(screen.getByRole("button", { name: "新建题目" }));
+    fireEvent.click(screen.getByRole("button", { name: "图片识别添加" }));
+    const fileInput = screen.getByLabelText("题目图片");
+    fireEvent.change(fileInput, {
+      target: {
+        files: [new File(["img"], "pending.png", { type: "image/png" })],
+      },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "开始识别" }));
+
+    await waitFor(() => expect(fileInput).toBeDisabled());
+  });
 });
