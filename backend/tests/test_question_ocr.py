@@ -104,6 +104,45 @@ def test_extract_segmented_returns_multiple_questions(db_session, monkeypatch, t
     assert result.questions[0].stem == "Q1"
 
 
+def test_extract_merged_reads_assets_in_order(db_session, monkeypatch, tmp_path):
+    org = make_org(db_session)
+    staff = make_user(db_session, org, role=UserRole.org_staff)
+    paths = []
+    assets = []
+    for idx in range(2):
+        path = tmp_path / f"part{idx}.png"
+        path.write_bytes(f"part{idx}".encode())
+        paths.append(path)
+        asset = MediaAsset(
+            org_id=org.id,
+            created_by=staff.id,
+            content_type="image/png",
+            storage_path=str(path),
+        )
+        db_session.add(asset)
+        assets.append(asset)
+    db_session.commit()
+
+    seen_paths = []
+
+    def fake_extract_merged(self, paths_and_types, policy):
+        seen_paths.extend([str(p) for p, _ in paths_and_types])
+        return {
+            "q_type": "single_choice",
+            "stem": "Merged question",
+            "choices": [{"key": "A", "text": "Yes"}],
+            "answer_key": "A",
+        }
+
+    monkeypatch.setattr(QuestionOCRService, "_extract_merged", fake_extract_merged)
+
+    result = QuestionOCRService().extract_merged(
+        db_session, org_id=org.id, asset_ids=[a.id for a in assets]
+    )
+    assert result.stem == "Merged question"
+    assert seen_paths == [str(paths[0]), str(paths[1])]
+
+
 def test_extract_segmented_raw_text_fallback(db_session, monkeypatch, tmp_path):
     org = make_org(db_session)
     staff = make_user(db_session, org, role=UserRole.org_staff)

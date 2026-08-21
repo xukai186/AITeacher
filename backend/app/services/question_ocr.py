@@ -67,6 +67,21 @@ class QuestionOCRService:
         )
         return self._validate_segmented(data)
 
+    def extract_merged(
+        self,
+        db: Session,
+        *,
+        org_id: uuid.UUID,
+        asset_ids: list[uuid.UUID],
+    ) -> OCRQuestion:
+        policy = self._load_policy(db, org_id=org_id)
+        paths_and_types: list[tuple[Path, str]] = []
+        for asset_id in asset_ids:
+            asset = self._load_asset(db, org_id=org_id, asset_id=asset_id)
+            paths_and_types.append((Path(asset.storage_path), asset.content_type))
+        data = self._extract_merged(paths_and_types, policy)
+        return self._validate(data)
+
     def _load_asset(self, db, *, org_id, asset_id) -> MediaAsset:
         asset = db.execute(
             select(MediaAsset).where(
@@ -158,6 +173,44 @@ class QuestionOCRService:
                     ],
                 }
             ],
+            tools=None,
+            params=policy.params or {},
+        )
+        return self._parse_json(completion.text or "")
+
+    def _extract_merged(
+        self,
+        paths_and_types: list[tuple[Path, str]],
+        policy: ModelPolicy | None,
+    ) -> dict:
+        if policy is None:
+            raise RuntimeError("paper_gen model policy is not configured")
+
+        content: list[dict] = [
+            {
+                "type": "text",
+                "text": (
+                    "These images describe one single exam question in upload order. "
+                    "Return strict JSON with q_type, stem, choices, answer_key."
+                ),
+            }
+        ]
+        for path, content_type in paths_and_types:
+            encoded = base64.b64encode(path.read_bytes()).decode("ascii")
+            content.append(
+                {
+                    "type": "image_url",
+                    "image_url": {
+                        "url": f"data:{content_type};base64,{encoded}",
+                    },
+                }
+            )
+
+        completion = self._gateway.complete(
+            provider=policy.provider,
+            model=policy.model,
+            scene="paper_gen",
+            messages=[{"role": "user", "content": content}],
             tools=None,
             params=policy.params or {},
         )
