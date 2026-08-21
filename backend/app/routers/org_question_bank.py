@@ -24,6 +24,7 @@ from app.schemas.question_bank import (
     QuestionOCRRequest,
     QuestionOCRResponse,
     QuestionOCRSegmentedOut,
+    QuestionOCRSingleQuestionOut,
 )
 from app.services.media_assets import MediaAssetService, UploadTooLargeError
 from app.services.question_bank import QuestionBankService, _UNSET
@@ -88,6 +89,18 @@ def extract_question(
                     )
                     for q in result.questions
                 ]
+            )
+        if payload.mode == "multi_image_single_question":
+            question = svc.extract_merged(
+                db, org_id=actor.org_id, asset_ids=payload.asset_ids
+            )
+            return QuestionOCRSingleQuestionOut(
+                question=QuestionDraftOut(
+                    q_type=question.q_type,
+                    stem=question.stem,
+                    choices=question.choices,
+                    answer_key=question.answer_key,
+                )
             )
         question = svc.extract(
             db, org_id=actor.org_id, asset_id=payload.asset_ids[0]

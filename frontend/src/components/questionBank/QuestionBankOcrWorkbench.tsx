@@ -71,7 +71,10 @@ export default function QuestionBankOcrWorkbench({
   const mounted = useRef(true);
   const onSubmittingChangeRef = useRef(onSubmittingChange);
   onSubmittingChangeRef.current = onSubmittingChange;
-  const [file, setFile] = useState<File | null>(null);
+  const [ocrMode, setOcrMode] = useState<
+    "single_image_multi_question" | "multi_image_single_question"
+  >("single_image_multi_question");
+  const [files, setFiles] = useState<File[]>([]);
   const [sourceAssetId, setSourceAssetId] = useState<string | null>(null);
   const [drafts, setDrafts] = useState<OcrDraftItem[]>([]);
   const [rawText, setRawText] = useState<string | null>(null);
@@ -112,7 +115,14 @@ export default function QuestionBankOcrWorkbench({
   };
 
   const recognize = async () => {
-    if (!file) return;
+    if (!files.length) return;
+    if (
+      ocrMode === "multi_image_single_question" &&
+      files.length < 2
+    ) {
+      setRecognizeError("多图一题至少需要两张图片");
+      return;
+    }
     const generation = ++recognitionGeneration.current;
     setRecognizing(true);
     setRecognizeError(null);
@@ -120,22 +130,50 @@ export default function QuestionBankOcrWorkbench({
     setDrafts([]);
     setRawText(null);
     try {
-      const uploaded = await uploadQuestionImage(file);
-      if (generation !== recognitionGeneration.current) return;
-      const result = await recognizeQuestions(
-        "single_image_multi_question",
-        [uploaded.asset_id],
-      );
+      const assetIds: string[] = [];
+      for (const file of files) {
+        const uploaded = await uploadQuestionImage(file);
+        if (generation !== recognitionGeneration.current) return;
+        assetIds.push(uploaded.asset_id);
+      }
+      const result = await recognizeQuestions(ocrMode, assetIds);
       if (generation !== recognitionGeneration.current) return;
       if (result.mode === "raw_text_fallback") {
-        setSourceAssetId(uploaded.asset_id);
+        if (ocrMode !== "single_image_multi_question") {
+          throw new Error("识别结果模式异常，请重试");
+        }
+        setSourceAssetId(assetIds[0]);
         setRawText(result.raw_text);
         return;
       }
-      if (result.mode !== "segmented") {
+      if (result.mode === "single_question") {
+        if (ocrMode !== "multi_image_single_question") {
+          throw new Error("识别结果模式异常，请重试");
+        }
+        const question = result.question;
+        setSourceAssetId(assetIds[0]);
+        setDrafts([
+          {
+            localId: "ocr-0",
+            stem: question.stem,
+            qType: question.q_type,
+            choicesText:
+              question.choices
+                ?.map((choice) => `${choice.key}. ${choice.text}`)
+                .join("\n") ?? "",
+            answerKey: question.answer_key ?? "",
+            enrichment: null,
+          },
+        ]);
+        return;
+      }
+      if (
+        result.mode !== "segmented" ||
+        ocrMode !== "single_image_multi_question"
+      ) {
         throw new Error("识别结果模式异常，请重试");
       }
-      setSourceAssetId(uploaded.asset_id);
+      setSourceAssetId(assetIds[0]);
       setDrafts(
         result.questions.map((question, index) => ({
           localId: `ocr-${index}`,
@@ -296,15 +334,43 @@ export default function QuestionBankOcrWorkbench({
       <div className="flex gap-2">
         <button
           type="button"
-          className="rounded bg-slate-900 px-3 py-2 text-white"
+          disabled={operationLocked}
+          onClick={() => {
+            recognitionGeneration.current += 1;
+            setRecognizing(false);
+            setOcrMode("single_image_multi_question");
+            setFiles([]);
+            setSourceAssetId(null);
+            setDrafts([]);
+            setRawText(null);
+            setRecognizeError(null);
+          }}
+          className={
+            ocrMode === "single_image_multi_question"
+              ? "rounded bg-slate-900 px-3 py-2 text-white"
+              : "rounded bg-slate-100 px-3 py-2 text-slate-700"
+          }
         >
           一图多题
         </button>
         <button
           type="button"
-          disabled
-          title="将在 Phase B 开放"
-          className="rounded bg-slate-100 px-3 py-2 text-slate-400"
+          disabled={operationLocked}
+          onClick={() => {
+            recognitionGeneration.current += 1;
+            setRecognizing(false);
+            setOcrMode("multi_image_single_question");
+            setFiles([]);
+            setSourceAssetId(null);
+            setDrafts([]);
+            setRawText(null);
+            setRecognizeError(null);
+          }}
+          className={
+            ocrMode === "multi_image_single_question"
+              ? "rounded bg-slate-900 px-3 py-2 text-white"
+              : "rounded bg-slate-100 px-3 py-2 text-slate-700"
+          }
         >
           多图一题
         </button>
@@ -316,11 +382,15 @@ export default function QuestionBankOcrWorkbench({
           <input
             type="file"
             accept="image/*"
+            multiple={ocrMode === "multi_image_single_question"}
             disabled={operationLocked}
             onChange={(event) => {
               recognitionGeneration.current += 1;
               setRecognizing(false);
-              setFile(event.target.files?.[0] ?? null);
+              const selected = event.target.files
+                ? Array.from(event.target.files)
+                : [];
+              setFiles(selected);
               setSourceAssetId(null);
               setDrafts([]);
               setRawText(null);
@@ -331,7 +401,7 @@ export default function QuestionBankOcrWorkbench({
         </label>
         <button
           type="button"
-          disabled={!file || operationLocked}
+          disabled={!files.length || operationLocked}
           onClick={recognize}
           className="rounded bg-slate-700 px-4 py-2 text-white disabled:opacity-50"
         >

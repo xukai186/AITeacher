@@ -440,4 +440,69 @@ describe("Question bank OCR import", () => {
       });
     });
   });
+
+  it("uploads multiple images for multi-image single-question mode", async () => {
+    let uploadCount = 0;
+    const fetchMock = vi.fn(async (input: RequestInfo, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith("/org/question-bank/upload-image")) {
+        uploadCount += 1;
+        return new Response(
+          JSON.stringify({
+            asset_id: `asset-${uploadCount}`,
+            storage_key: `k-${uploadCount}`,
+          }),
+          { status: 201 },
+        );
+      }
+      if (url.endsWith("/org/question-bank/ocr")) {
+        expect(JSON.parse(String(init?.body))).toEqual({
+          mode: "multi_image_single_question",
+          asset_ids: ["asset-1", "asset-2"],
+        });
+        return new Response(
+          JSON.stringify({
+            mode: "single_question",
+            question: {
+              q_type: "short_answer",
+              stem: "Merged stem",
+              choices: null,
+              answer_key: "answer",
+            },
+          }),
+          { status: 200 },
+        );
+      }
+      if (url.includes("/org/question-bank")) {
+        return new Response(JSON.stringify([]), { status: 200 });
+      }
+      return new Response("not found", { status: 404 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderPage();
+    fireEvent.click(screen.getByRole("button", { name: "新建题目" }));
+    fireEvent.click(screen.getByRole("button", { name: "图片识别添加" }));
+    fireEvent.click(screen.getByRole("button", { name: "多图一题" }));
+    fireEvent.change(screen.getByLabelText("题目图片"), {
+      target: {
+        files: [
+          new File(["img1"], "a.png", { type: "image/png" }),
+          new File(["img2"], "b.png", { type: "image/png" }),
+        ],
+      },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "开始识别" }));
+
+    await waitFor(() => {
+      expect(screen.getByDisplayValue("Merged stem")).toBeInTheDocument();
+    });
+    expect(screen.getAllByLabelText("题干")).toHaveLength(1);
+    const ocrCalls = fetchMock.mock.calls.filter(([url]) =>
+      String(url).endsWith("/org/question-bank/ocr"),
+    );
+    expect(ocrCalls).toHaveLength(1);
+  });
+
+
 });

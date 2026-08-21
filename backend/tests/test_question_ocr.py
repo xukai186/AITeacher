@@ -230,6 +230,40 @@ def test_ocr_single_image_multi_question_raw_fallback(client, db_session, monkey
     assert resp.json() == {"mode": "raw_text_fallback", "raw_text": "raw sheet text"}
 
 
+
+def test_ocr_multi_image_single_question(client, db_session, monkeypatch, tmp_path):
+    headers, _ = _staff_headers(client, db_session)
+    monkeypatch.setattr("app.services.media_assets.MEDIA_ROOT", tmp_path)
+    asset_ids = []
+    for name in ("a.png", "b.png"):
+        uploaded = client.post(
+            "/org/question-bank/upload-image",
+            files={"file": (name, PNG_BYTES, "image/png")},
+            headers=headers,
+        )
+        asset_ids.append(uploaded.json()["asset_id"])
+    monkeypatch.setattr(
+        QuestionOCRService,
+        "_extract_merged",
+        lambda self, paths_and_types, policy: {
+            "q_type": "single_choice",
+            "stem": "Merged",
+            "choices": None,
+            "answer_key": "A",
+        },
+    )
+    resp = client.post(
+        "/org/question-bank/ocr",
+        json={"mode": "multi_image_single_question", "asset_ids": asset_ids},
+        headers=headers,
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["mode"] == "single_question"
+    assert body["question"]["stem"] == "Merged"
+
+
+
 def test_legacy_asset_id_ocr_still_works(client, db_session, monkeypatch, tmp_path):
     headers, _ = _staff_headers(client, db_session)
     monkeypatch.setattr("app.services.media_assets.MEDIA_ROOT", tmp_path)
