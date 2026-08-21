@@ -3,7 +3,7 @@ import uuid
 import pytest
 from fastapi import HTTPException
 
-from app.models import MediaAsset, SyllabusNode, UserRole
+from app.models import MediaAsset, QuestionBankItem, SyllabusNode, UserRole
 from app.schemas.question_bank import QuestionBankCreate
 from app.services.question_bank import QuestionBankService
 from tests.factories import make_org, make_user
@@ -471,3 +471,100 @@ def test_dedupe_ignores_deleted_so_stem_can_be_recreated(db_session):
     )
     recreated = _create(svc, db_session, admin, stem="Same stem")
     assert recreated.status == "active"
+
+
+def test_unique_index_blocks_duplicate_insert(db_session):
+    admin, org = _admin(db_session)
+    svc = QuestionBankService()
+    stem = "Index duplicate stem"
+    _create(svc, db_session, admin, stem=stem)
+
+    duplicate = QuestionBankItem(
+        scope="org",
+        org_id=org.id,
+        subject_code="english",
+        knowledge_node_id=None,
+        q_type="single_choice",
+        stem=stem,
+        choices_json=[{"key": "A", "text": "1"}],
+        answer_key="A",
+        source_type="admin_manual",
+        status="active",
+        created_by=admin.id,
+    )
+    db_session.add(duplicate)
+
+    with pytest.raises(HTTPException) as exc:
+        QuestionBankService._flush_or_raise_duplicate(db_session)
+    assert exc.value.status_code == 409
+    assert exc.value.detail == "exact question bank duplicate"
+
+
+def test_update_rejected_to_pending_conflicts_when_active_exists(db_session):
+    admin, _ = _admin(db_session)
+    svc = QuestionBankService()
+    stem = "Conflict stem"
+    pending = _create(
+        svc,
+        db_session,
+        admin,
+        stem=stem,
+        source_type="ai_generated",
+    )
+    svc.reject(db_session, actor=admin, item_id=pending.id)
+    _create(
+        svc,
+        db_session,
+        admin,
+        stem=stem,
+        source_type="admin_manual",
+        allow_inactive_duplicate=True,
+    )
+
+    with pytest.raises(HTTPException) as exc:
+        svc.update(db_session, actor=admin, item_id=pending.id, analysis_text="retry")
+    assert exc.value.status_code == 409
+
+
+def test_update_stem_conflicts_with_existing_active(db_session):
+    admin, _ = _admin(db_session)
+    svc = QuestionBankService()
+    _create(svc, db_session, admin, stem="Taken stem", source_type="admin_manual")
+    pending = _create(
+        svc,
+        db_session,
+        admin,
+        stem="Other stem",
+        source_type="ai_generated",
+    )
+
+    with pytest.raises(HTTPException) as exc:
+        svc.update(db_session, actor=admin, item_id=pending.id, stem="Taken stem")
+    assert exc.value.status_code == 409
+
+
+def test_global_duplicate_rejected(db_session):
+    admin, _ = _admin(db_session)
+    svc = QuestionBankService()
+    stem = "Global duplicate stem"
+    _create(
+        svc,
+        db_session,
+        admin,
+        scope="global",
+        org_id=None,
+        stem=stem,
+        source_type="admin_manual",
+    )
+
+    with pytest.raises(HTTPException) as exc:
+        _create(
+            svc,
+            db_session,
+            admin,
+            scope="global",
+            org_id=None,
+            stem=stem,
+            source_type="admin_manual",
+        )
+    assert exc.value.status_code == 409
