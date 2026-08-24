@@ -40,6 +40,44 @@ def test_student_chat_creates_session_and_persists_messages(client, db_session):
     assert resp2.status_code == 200
 
 
+def test_student_can_load_chat_history(client, db_session):
+    _seed_student_and_policy(db_session)
+    token = _token(client, "student@demo.example")
+    headers = {"Authorization": f"Bearer {token}"}
+
+    empty = client.get(
+        "/chat?agent_type=subject&subject_code=english",
+        headers=headers,
+    )
+    assert empty.status_code == 200
+    assert empty.json() == {"session_id": None, "messages": []}
+
+    client.post(
+        "/chat",
+        json={"agent_type": "subject", "subject_code": "english", "message": "hi"},
+        headers=headers,
+    )
+    client.post(
+        "/chat",
+        json={"agent_type": "subject", "subject_code": "english", "message": "again"},
+        headers=headers,
+    )
+
+    history = client.get(
+        "/chat?agent_type=subject&subject_code=english",
+        headers=headers,
+    )
+    assert history.status_code == 200
+    body = history.json()
+    assert body["session_id"]
+    roles = [row["role"] for row in body["messages"]]
+    contents = [row["content"] for row in body["messages"]]
+    assert roles == ["user", "assistant", "user", "assistant"]
+    assert contents[0] == "hi"
+    assert contents[2] == "again"
+    assert all(not text.startswith("__TOOL_CALLS__:") for text in contents)
+
+
 def test_subject_chat_triggers_tool_loop(client, db_session):
     _seed_student_and_policy(db_session)
     token = _token(client, "student@demo.example")

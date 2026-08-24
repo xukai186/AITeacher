@@ -11,3 +11,13 @@ class ChatPostResponse(BaseModel):
     session_id: str
     assistant_message: str
     tools_used: list[str] = []
+
+
+class ChatHistoryMessageOut(BaseModel):
+    role: str
+    content: str
+
+
+class ChatHistoryOut(BaseModel):
+    session_id: str | None
+    messages: list[ChatHistoryMessageOut]

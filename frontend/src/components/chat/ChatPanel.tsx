@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { postChat } from "@/api/chat";
+import { useEffect, useState } from "react";
+import { fetchChatHistory, postChat } from "@/api/chat";
 import ChatComposer from "./ChatComposer";
 import ChatMessageList, { type ChatMessage } from "./ChatMessageList";
 
@@ -13,8 +13,61 @@ export default function ChatPanel({
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [pending, setPending] = useState(false);
   const [sessionId, setSessionId] = useState<string | null>(null);
+  const [historyReady, setHistoryReady] = useState(false);
 
-    async function handleSend(text: string) {
+  useEffect(() => {
+    let cancelled = false;
+    setMessages([]);
+    setSessionId(null);
+    setHistoryReady(false);
+    fetchChatHistory(agentType, subjectCode)
+      .then((history) => {
+        if (cancelled) return;
+        setSessionId(history.session_id);
+        setMessages(
+          history.messages.map((message) => ({
+            role: message.role,
+            content: message.content,
+          })),
+        );
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setMessages([]);
+      })
+      .finally(() => {
+        if (!cancelled) setHistoryReady(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [agentType, subjectCode]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setMessages([]);
+    setSessionId(null);
+    fetchChatHistory(agentType, subjectCode)
+      .then((history) => {
+        if (cancelled) return;
+        setSessionId(history.session_id);
+        setMessages(
+          history.messages.map((message) => ({
+            role: message.role,
+            content: message.content,
+          })),
+        );
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setMessages([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [agentType, subjectCode]);
+
+  async function handleSend(text: string) {
     if (pending) return;
     setMessages((prev) => [...prev, { role: "user", content: text }]);
     setPending(true);
@@ -58,8 +111,7 @@ export default function ChatPanel({
           <ChatMessageList messages={messages} />
         )}
       </div>
-      <ChatComposer disabled={pending} onSend={handleSend} />
+      <ChatComposer disabled={pending || !historyReady} onSend={handleSend} />
     </div>
   );
 }
-
