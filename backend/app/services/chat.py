@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
 
-from sqlalchemy import select
+from sqlalchemy import case, select
 from sqlalchemy.orm import Session
 
 from app.models import ChatMessage, ChatSession, ModelPolicy, User
@@ -45,14 +46,14 @@ class ChatService:
             db.add(session)
             db.flush()
 
-        db.add(ChatMessage(session_id=session.id, role="user", content=message))
+        db.add(self._new_message(session.id, "user", message))
         db.flush()
 
         prior_rows = (
             db.execute(
                 select(ChatMessage)
                 .where(ChatMessage.session_id == session.id)
-                .order_by(ChatMessage.created_at)
+                .order_by(*self._message_order())
             )
             .scalars()
             .all()
@@ -85,13 +86,13 @@ class ChatService:
             role = msg.get("role")
             content = msg.get("content")
             if role == "assistant" and content and str(content).startswith(TOOL_CALLS_PREFIX):
-                db.add(ChatMessage(session_id=session.id, role="assistant", content=str(content)))
+                db.add(self._new_message(session.id, "assistant", str(content)))
             elif role == "tool":
                 db.add(
-                    ChatMessage(
-                        session_id=session.id,
-                        role="tool",
-                        content=json.dumps(
+                    self._new_message(
+                        session.id,
+                        "tool",
+                        json.dumps(
                             {
                                 "tool_call_id": msg.get("tool_call_id"),
                                 "name": msg.get("name"),
@@ -102,8 +103,66 @@ class ChatService:
                     )
                 )
 
-        db.add(
-            ChatMessage(session_id=session.id, role="assistant", content=turn.assistant_message)
-        )
+        db.add(self._new_message(session.id, "assistant", turn.assistant_message))
         db.commit()
         return str(session.id), turn.assistant_message, turn.tools_used
+
+    def list_history(
+        self,
+        db: Session,
+        *,
+        student_user: User,
+        agent_type: str,
+        subject_code: str | None,
+    ) -> tuple[str | None, list[dict[str, str]]]:
+        session = db.execute(
+            select(ChatSession).where(
+                ChatSession.student_user_id == student_user.id,
+                ChatSession.agent_type == AgentType(agent_type),
+                ChatSession.subject_code == subject_code,
+            )
+        ).scalar_one_or_none()
+        if session is None:
+            return None, []
+
+        rows = (
+            db.execute(
+                select(ChatMessage)
+                .where(ChatMessage.session_id == session.id)
+                .order_by(*self._message_order())
+            )
+            .scalars()
+            .all()
+        )
+        messages: list[dict[str, str]] = []
+        for row in rows:
+            if row.role == "user":
+                messages.append({"role": "user", "content": row.content})
+            elif (
+                row.role == "assistant"
+                and not row.content.startswith(TOOL_CALLS_PREFIX)
+            ):
+                messages.append({"role": "assistant", "content": row.content})
+        return str(session.id), messages
+
+    @staticmethod
+    def _new_message(session_id, role: str, content: str) -> ChatMessage:
+        return ChatMessage(
+            session_id=session_id,
+            role=role,
+            content=content,
+            created_at=datetime.now(timezone.utc),
+        )
+
+    @staticmethod
+    def _message_order():
+        return (
+            ChatMessage.created_at,
+            case(
+                (ChatMessage.role == "user", 0),
+                (ChatMessage.content.startswith(TOOL_CALLS_PREFIX), 1),
+                (ChatMessage.role == "tool", 2),
+                else_=3,
+            ),
+            ChatMessage.id,
+        )
