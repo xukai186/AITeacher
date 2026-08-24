@@ -334,3 +334,72 @@ def test_delete_active_question_returns_409(client, db_session):
         headers=headers,
     )
     assert resp.status_code == 409
+
+
+def test_list_filters_by_scope_for_admin(client, db_session):
+    admin = _seed_user(db_session, UserRole.org_admin, email="scope-admin@example.com")
+    headers = _headers(client, admin.email)
+    org_item = client.post(
+        "/org/question-bank",
+        headers=headers,
+        json=_question_payload(scope="org", stem="Org stem"),
+    )
+    global_item = client.post(
+        "/org/question-bank",
+        headers=headers,
+        json=_question_payload(
+            scope="global",
+            stem="Global stem",
+            source_type="admin_manual",
+        ),
+    )
+    assert org_item.status_code == 201
+    assert global_item.status_code == 201
+
+    all_ids = {row["id"] for row in client.get("/org/question-bank", headers=headers).json()}
+    org_ids = {
+        row["id"]
+        for row in client.get("/org/question-bank?scope=org", headers=headers).json()
+    }
+    global_ids = {
+        row["id"]
+        for row in client.get("/org/question-bank?scope=global", headers=headers).json()
+    }
+
+    assert org_item.json()["id"] in all_ids and global_item.json()["id"] in all_ids
+    assert org_ids == {org_item.json()["id"]}
+    assert global_ids == {global_item.json()["id"]}
+
+
+def test_staff_scope_global_returns_empty(client, db_session):
+    org = make_org(db_session)
+    admin = make_user(
+        db_session,
+        org,
+        role=UserRole.org_admin,
+        email="scope-admin2@example.com",
+        password_hash=hash_password("pw1234"),
+    )
+    staff = make_user(
+        db_session,
+        org,
+        role=UserRole.org_staff,
+        email="scope-staff@example.com",
+        password_hash=hash_password("pw1234"),
+    )
+    db_session.commit()
+    admin_headers = _headers(client, admin.email)
+    staff_headers = _headers(client, staff.email)
+    created = client.post(
+        "/org/question-bank",
+        headers=admin_headers,
+        json=_question_payload(
+            scope="global",
+            stem="Hidden from staff",
+            source_type="admin_manual",
+        ),
+    )
+    assert created.status_code == 201
+    resp = client.get("/org/question-bank?scope=global", headers=staff_headers)
+    assert resp.status_code == 200
+    assert resp.json() == []
