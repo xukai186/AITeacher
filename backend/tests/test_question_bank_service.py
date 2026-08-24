@@ -333,6 +333,35 @@ def test_list_visibility_and_filters(db_session):
     assert english_pending_ids == {global_pending.id}
 
 
+def test_list_scope_filter_for_admin_and_staff(db_session):
+    admin, org = _admin(db_session)
+    staff = _staff(db_session, org)
+    svc = QuestionBankService()
+    own = _create(svc, db_session, admin, stem="Org only")
+    global_item = _create(
+        svc,
+        db_session,
+        admin,
+        scope="global",
+        org_id=None,
+        stem="Global only",
+        source_type="admin_manual",
+    )
+    db_session.flush()
+
+    admin_all = {i.id for i in svc.list(db_session, viewer=admin)}
+    admin_org = {i.id for i in svc.list(db_session, viewer=admin, scope="org")}
+    admin_global = {i.id for i in svc.list(db_session, viewer=admin, scope="global")}
+    staff_global = list(svc.list(db_session, viewer=staff, scope="global"))
+    staff_org = {i.id for i in svc.list(db_session, viewer=staff, scope="org")}
+
+    assert admin_all == {own.id, global_item.id}
+    assert admin_org == {own.id}
+    assert admin_global == {global_item.id}
+    assert staff_global == []
+    assert staff_org == {own.id}
+
+
 def test_list_supports_pagination(db_session):
     admin, _org = _admin(db_session)
     svc = QuestionBankService()
