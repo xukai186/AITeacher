@@ -228,10 +228,18 @@ export default function QuestionBankPage({ role }: { role: QuestionBankRole }) {
   const [draft, setDraft] = useState<Draft>(EMPTY_DRAFT);
   const [confirmation, setConfirmation] = useState<Enrichment | null>(null);
   const [scope, setScope] = useState<"org" | "global">("org");
+  const [listScope, setListScope] = useState<"" | "org" | "global">("");
   const [detailItem, setDetailItem] = useState<QuestionBankItem | null>(null);
   const [editItem, setEditItem] = useState<QuestionBankItem | null>(null);
 
-  const filters = { subject_code: subject, status, pending: pendingOnly, limit, offset };
+  const filters = {
+    subject_code: subject,
+    status,
+    pending: pendingOnly,
+    ...(listScope ? { scope: listScope } : {}),
+    limit,
+    offset,
+  };
   const questions = useQuery({
     queryKey: ["question-bank", filters],
     queryFn: () => listQuestions(filters),
@@ -241,7 +249,7 @@ export default function QuestionBankPage({ role }: { role: QuestionBankRole }) {
     setOffset(0);
     setAllItems([]);
     setHasMore(true);
-  }, [subject, status, pendingOnly]);
+  }, [subject, status, pendingOnly, listScope]);
 
   useEffect(() => {
     if (!questions.data) return;
@@ -400,6 +408,23 @@ export default function QuestionBankPage({ role }: { role: QuestionBankRole }) {
           />
           仅看待审核
         </label>
+        {role === "org_admin" ? (
+          <label className="space-y-1 text-sm">
+            <span className="block text-slate-600">范围</span>
+            <select
+              value={listScope}
+              onChange={(event) =>
+                setListScope(event.target.value as "" | "org" | "global")
+              }
+              className="rounded border px-3 py-2"
+              aria-label="范围"
+            >
+              <option value="">全部</option>
+              <option value="org">本机构</option>
+              <option value="global">平台公共</option>
+            </select>
+          </label>
+        ) : null}
       </section>
 
       <section className="overflow-hidden rounded bg-white shadow">
@@ -422,6 +447,7 @@ export default function QuestionBankPage({ role }: { role: QuestionBankRole }) {
                 <th className="px-4 py-3">科目</th>
                 <th className="px-4 py-3">难度</th>
                 <th className="px-4 py-3">状态</th>
+                {role === "org_admin" ? <th className="px-4 py-3">范围</th> : null}
                 <th className="px-4 py-3">操作</th>
               </tr>
             </thead>
@@ -440,6 +466,11 @@ export default function QuestionBankPage({ role }: { role: QuestionBankRole }) {
                     <td className="px-4 py-3">
                       {STATUS_LABELS[item.status] ?? item.status}
                     </td>
+                    {role === "org_admin" ? (
+                      <td className="px-4 py-3">
+                        {SCOPE_LABELS[item.scope] ?? item.scope}
+                      </td>
+                    ) : null}
                     <td className="space-x-2 whitespace-nowrap px-4 py-3">
                       <button
                         type="button"

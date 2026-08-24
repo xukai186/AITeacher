@@ -248,6 +248,7 @@ def list_questions(
     status_filter: str | None = Query(default=None, alias="status"),
     subject_code: str | None = None,
     pending: bool = False,
+    scope: str | None = Query(default=None),
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
     db: Session = Depends(get_db),
@@ -259,6 +260,7 @@ def list_questions(
         status=status_filter,
         subject_code=subject_code,
         pending_only=pending,
+        scope=scope,
         limit=limit,
         offset=offset,
     )

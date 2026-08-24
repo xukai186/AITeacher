@@ -164,6 +164,7 @@ class QuestionBankService:
         pending_only: bool = False,
         limit: int = 50,
         offset: int = 0,
+        scope: str | None = None,
     ) -> list[QuestionBankItem]:
         self._require_staff(viewer)
         if viewer.role == UserRole.org_admin:
@@ -176,6 +177,20 @@ class QuestionBankService:
 
         stmt = select(QuestionBankItem).where(visibility)
         stmt = stmt.where(QuestionBankItem.status != "deleted")
+        if scope == "org":
+            stmt = stmt.where(
+                QuestionBankItem.scope == "org",
+                QuestionBankItem.org_id == viewer.org_id,
+            )
+        elif scope == "global":
+            if viewer.role != UserRole.org_admin:
+                return []
+            stmt = stmt.where(QuestionBankItem.scope == "global")
+        elif scope is not None:
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_ENTITY,
+                "unsupported question bank scope filter",
+            )
         if pending_only:
             stmt = stmt.where(QuestionBankItem.status == "pending_review")
         elif status is not None:
