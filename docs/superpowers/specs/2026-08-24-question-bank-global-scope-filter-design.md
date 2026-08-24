@@ -1,7 +1,7 @@
 # 题库 Global 范围筛选 — 产品设计规格
 
 **日期：** 2026-08-24  
-**状态：** 待实现  
+**状态：** 已实现  
 **依赖：** 全局题库 P1–P3、OCR 守卫与软删除、并发精确去重、多图 OCR（PR #53–#55）  
 **关联：** `docs/superpowers/specs/2026-08-04-global-question-bank-design.md` §5.1
 
