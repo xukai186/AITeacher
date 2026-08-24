@@ -6,14 +6,14 @@ import QuestionBankPage from "../src/components/questionBank/QuestionBankPage";
 import KnowledgeNodeSelect from "../src/components/questionBank/KnowledgeNodeSelect";
 import { setToken } from "../src/api/client";
 
-function renderPage() {
+function renderPage(role: "org_admin" | "org_staff" = "org_staff") {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
   return render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter>
-        <QuestionBankPage role="org_staff" />
+        <QuestionBankPage role={role} />
       </MemoryRouter>
     </QueryClientProvider>,
   );
@@ -641,5 +641,124 @@ describe("Question bank", () => {
       expect(del).toBeTruthy();
     });
     expect(screen.queryByRole("heading", { name: "题目详情" })).toBeNull();
+  });
+
+  it("admin can filter list by scope and shows scope column", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo) => {
+      const url = String(input);
+      if (url.includes("/org/question-bank?") || url.endsWith("/org/question-bank")) {
+        const u = new URL(url, "http://localhost");
+        const scope = u.searchParams.get("scope");
+        const items = [
+          {
+            id: "q-org",
+            scope: "org",
+            org_id: "org-1",
+            subject_code: "english",
+            knowledge_node_id: null,
+            q_type: "short_answer",
+            stem: "Org question",
+            choices: null,
+            answer_key: "a",
+            analysis_text: null,
+            difficulty: 2,
+            source_type: "admin_manual",
+            status: "active",
+            created_at: "2026-08-01T00:00:00Z",
+          },
+          {
+            id: "q-global",
+            scope: "global",
+            org_id: null,
+            subject_code: "english",
+            knowledge_node_id: null,
+            q_type: "short_answer",
+            stem: "Global question",
+            choices: null,
+            answer_key: "a",
+            analysis_text: null,
+            difficulty: 2,
+            source_type: "admin_manual",
+            status: "active",
+            created_at: "2026-08-01T00:00:00Z",
+          },
+        ];
+        const filtered =
+          scope === "org"
+            ? items.filter((i) => i.scope === "org")
+            : scope === "global"
+              ? items.filter((i) => i.scope === "global")
+              : items;
+        return new Response(JSON.stringify(filtered), { status: 200 });
+      }
+      return new Response("not found", { status: 404 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderPage("org_admin");
+    await waitFor(() => expect(screen.getByText("Org question")).toBeTruthy());
+    expect(screen.getByText("Global question")).toBeTruthy();
+    expect(screen.getByRole("columnheader", { name: "范围" })).toBeTruthy();
+    const table = screen.getByRole("table");
+    expect(table).toHaveTextContent("本机构");
+    expect(table).toHaveTextContent("平台公共");
+
+    fireEvent.change(screen.getByLabelText("范围"), {
+      target: { value: "global" },
+    });
+
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        expect.stringContaining("scope=global"),
+        expect.anything(),
+      ),
+    );
+    await waitFor(() => expect(screen.queryByText("Org question")).toBeNull());
+    expect(screen.getByText("Global question")).toBeTruthy();
+  });
+
+  it("staff does not show scope filter", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo) => {
+      const url = String(input);
+      if (url.includes("/org/question-bank") && !url.includes("/enrich")) {
+        return new Response(
+          JSON.stringify([
+            {
+              id: "q-org",
+              scope: "org",
+              org_id: "org-1",
+              subject_code: "english",
+              knowledge_node_id: null,
+              q_type: "short_answer",
+              stem: "Staff org question",
+              choices: null,
+              answer_key: "a",
+              analysis_text: null,
+              difficulty: 2,
+              source_type: "staff_manual",
+              status: "active",
+              created_at: "2026-08-01T00:00:00Z",
+            },
+          ]),
+          { status: 200 },
+        );
+      }
+      return new Response("not found", { status: 404 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderPage("org_staff");
+    await waitFor(() => expect(screen.getByText("Staff org question")).toBeTruthy());
+    expect(screen.queryByLabelText("范围")).toBeNull();
+    expect(screen.queryByRole("columnheader", { name: "范围" })).toBeNull();
+    const listCalls = fetchMock.mock.calls.filter(([url]) => {
+      const u = String(url);
+      return (
+        u.includes("/org/question-bank") &&
+        !u.includes("/enrich") &&
+        !u.includes("/knowledge-nodes")
+      );
+    });
+    expect(listCalls.every(([url]) => !String(url).includes("scope="))).toBe(true);
   });
 });
