@@ -302,6 +302,8 @@ def test_paper_gen_placement_llm_prompt_includes_syllabus_and_past_exams(db_sess
     assert "往年真题卷结构" in prompt
     assert "完形填空" in prompt
     assert "2024真题" in prompt or "2023真题" in prompt
+    assert "原文" in prompt
+    assert '"passage"' in prompt
 
 
 def test_paper_gen_placement_mock_uses_placement_stem(db_session):
@@ -891,3 +893,172 @@ def test_self_test_prompt_excludes_cet_and_math_mastery(db_session, monkeypatch)
     assert "math_mastery" not in prompt
     assert "数学基础" not in captured["prompt"]
     assert "english_1" in captured["prompt"]
+    assert "原文" in captured["prompt"]
+    assert "passage" in captured["prompt"]
+
+
+def _english_slot(section_name: str, seq: int, section_index: int) -> "PlacementSlot":
+    from app.services.placement_paper_context import PlacementSlot
+
+    node = SyllabusNode(id=uuid.uuid4(), subject_code="english", name="主旨题")
+    return PlacementSlot(
+        seq=seq,
+        section_name=section_name,
+        q_type="single_choice",
+        knowledge_node=node,
+        section_index=section_index,
+        points=2,
+    )
+
+
+def test_english_material_sections_share_one_passage_batch():
+    from app.services.paper_gen import iter_slot_batches
+
+    slots = []
+    seq = 1
+    for index in range(1, 21):
+        slots.append(_english_slot("完形填空", seq, index))
+        seq += 1
+    for index in range(1, 21):
+        slots.append(_english_slot("阅读理解A", seq, index))
+        seq += 1
+    for index in range(1, 6):
+        slots.append(_english_slot("阅读理解B", seq, index))
+        seq += 1
+    for index in range(1, 6):
+        slots.append(_english_slot("翻译", seq, index))
+        seq += 1
+    for index in range(1, 3):
+        slots.append(_english_slot("写作", seq, index))
+        seq += 1
+
+    batches = iter_slot_batches(slots)
+    assert [len(batch) for batch in batches] == [20, 5, 5, 5, 5, 5, 5, 2]
+    assert batches[0][0].section_name == "完形填空"
+    assert all(slot.section_name == "阅读理解A" for slot in batches[1])
+    assert batches[-1][0].section_name == "写作"
+
+
+def test_politics_material_analysis_groups_share_one_text():
+    from app.services.paper_gen import iter_slot_batches
+    from app.services.placement_paper_context import PlacementSlot
+
+    def politics_slot(section_name: str, seq: int, q_type: str) -> PlacementSlot:
+        node = SyllabusNode(id=uuid.uuid4(), subject_code="politics", name="实践观")
+        return PlacementSlot(
+            seq=seq,
+            section_name=section_name,
+            q_type=q_type,
+            knowledge_node=node,
+            section_index=seq,
+            points=2,
+        )
+
+    slots = [politics_slot("单项选择题", index, "single_choice") for index in range(1, 3)]
+    slots.extend(politics_slot("材料分析题", index, "short_answer") for index in range(3, 8))
+    batches = iter_slot_batches(slots)
+    assert [len(batch) for batch in batches] == [2, 2, 1, 2]
+    assert batches[0][0].section_name == "单项选择题"
+    assert all(slot.section_name == "材料分析题" for batch in batches[1:] for slot in batch)
+
+
+def test_politics_material_prompt_requires_shared_passage():
+    from app.services.paper_gen import PaperGenService
+    from app.services.placement_paper_context import PlacementGenContext, PlacementSlot
+
+    node = SyllabusNode(id=uuid.uuid4(), subject_code="politics", name="实践观")
+    slots = [
+        PlacementSlot(
+            seq=index,
+            section_name="材料分析题",
+            q_type="short_answer",
+            knowledge_node=node,
+            section_index=index,
+            points=10,
+        )
+        for index in range(1, 3)
+    ]
+    captured: dict[str, str] = {}
+
+    class Gateway:
+        def generate(self, req):
+            captured["prompt"] = req.prompt
+
+            class Response:
+                text = "{}"
+
+            return Response()
+
+    context = PlacementGenContext(
+        exam_year=2027,
+        syllabus_outline=[{"name": "马原"}],
+        past_exam_samples=[],
+        paper_title="政治模拟摸底卷",
+        reference_year=2024,
+        paper_sections=[{"section_name": "材料分析题", "count": 5}],
+    )
+    PaperGenService(model_gateway=Gateway())._call_llm_for_slots(
+        "openai_compat",
+        "m",
+        {},
+        subject_code="politics",
+        slots=slots,
+        placement_context=context,
+    )
+    prompt = captured["prompt"]
+    assert "材料" in prompt
+    assert '"passage"' in prompt
+    assert "本批次「材料分析题」" in prompt
+
+
+def test_shared_passage_is_attached_to_each_question_stem():
+    from app.services.paper_gen import compose_question_stem
+
+    node = SyllabusNode(id=uuid.uuid4(), subject_code="english", name="主旨题")
+    from app.services.placement_paper_context import PlacementSlot
+
+    slots = [
+        PlacementSlot(
+            seq=1,
+            section_name="阅读理解A",
+            q_type="single_choice",
+            knowledge_node=node,
+            section_index=1,
+            points=2,
+        ),
+        PlacementSlot(
+            seq=2,
+            section_name="阅读理解A",
+            q_type="single_choice",
+            knowledge_node=node,
+            section_index=2,
+            points=2,
+        ),
+    ]
+    raw = json.dumps(
+        {
+            "passage": "Schools still need teachers who can explain ideas.",
+            "questions": [
+                {
+                    "stem": "What is the main idea?",
+                    "answer_key": "A",
+                    "choices": [{"key": "A", "text": "Teachers matter."}],
+                },
+                {
+                    "stem": "What does the author imply?",
+                    "answer_key": "B",
+                    "choices": [{"key": "B", "text": "Tools are not enough."}],
+                },
+            ],
+        },
+        ensure_ascii=False,
+    )
+    parsed = PaperGenService()._parse_llm_questions_for_slots(raw, slots=slots)
+    assert len(parsed) == 2
+    assert parsed[0].stem.startswith("【材料】")
+    assert "Schools still need teachers who can explain ideas." in parsed[0].stem
+    assert "What is the main idea?" in parsed[0].stem
+    assert "What does the author imply?" in parsed[1].stem
+    assert compose_question_stem("Already has the text.", "Already has the text.") == (
+        "Already has the text."
+    )

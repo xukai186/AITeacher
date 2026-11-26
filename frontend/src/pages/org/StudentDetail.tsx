@@ -13,6 +13,8 @@ import {
   SUBJECT_LABELS,
 } from "@/api/orgStudent";
 import { useAuth } from "@/auth/AuthContext";
+import QuestionMaterial from "@/components/QuestionMaterial";
+import { splitQuestionStem } from "@/lib/questionMaterial";
 
 type Tab = "overview" | "plans" | "papers" | "wrong";
 
@@ -476,10 +478,12 @@ export default function StudentDetail() {
             const choices = Array.isArray(w.question_snapshot_json?.choices)
               ? (w.question_snapshot_json.choices as { key?: string; text?: string }[])
               : [];
+            const stem = splitQuestionStem(String(w.question_snapshot_json?.stem ?? "（无题干）"));
             return (
               <li key={w.id} className="px-4 py-3 space-y-1">
                 <span className="text-slate-500">{subjectLabel(w.subject_code)}</span> · {w.source_type}
-                <div className="mt-1 font-medium">{w.question_snapshot_json?.stem ?? "（无题干）"}</div>
+                {stem.material ? <QuestionMaterial text={stem.material} /> : null}
+                <div className="mt-1 font-medium whitespace-pre-wrap">{stem.prompt}</div>
                 {choices.length > 0 ? (
                   <ul className="text-slate-700 space-y-0.5">
                     {choices.map((c, idx) => (

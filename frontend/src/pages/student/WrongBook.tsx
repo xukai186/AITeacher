@@ -12,6 +12,8 @@ import {
 } from "@/api/wrongBook";
 import ChatRichText from "@/components/chat/ChatRichText";
 import MathText from "@/components/MathText";
+import QuestionMaterial from "@/components/QuestionMaterial";
+import { splitQuestionStem } from "@/lib/questionMaterial";
 
 type SnapshotChoice = { key: string; text: string };
 
@@ -138,6 +140,7 @@ function WrongBookItemCard({
 }) {
   const qc = useQueryClient();
   const choices = snapshotChoices(item);
+  const stem = splitQuestionStem(snapshotStem(item));
   const correctAnswer = correctAnswerOf(item);
   const originalStudentAnswer = studentAnswerOf(item);
   // Active items stay concealed until this session's practice submit; mastered/archived always show.
@@ -188,8 +191,9 @@ function WrongBookItemCard({
         </span>
       </div>
 
+      {stem.material ? <QuestionMaterial text={stem.material} /> : null}
       <div className="font-medium">
-        <MathText text={snapshotStem(item)} />
+        <MathText text={stem.prompt} />
       </div>
 
       {choices.length > 0 ? (

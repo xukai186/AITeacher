@@ -3,8 +3,10 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { useNavigate, useParams } from "react-router-dom";
 import PaperGeneratingView from "@/components/PaperGeneratingView";
 import MathText from "@/components/MathText";
+import QuestionMaterial from "@/components/QuestionMaterial";
 import { getSelfTestPaper, submitSelfTest, type SelfTestQuestionOut } from "@/api/selfTests";
 import { useWaitForPaperGeneration } from "@/hooks/useWaitForPaperGeneration";
+import { groupQuestionsByMaterial } from "@/lib/questionMaterial";
 
 type AnswersState = Record<string, string>;
 
@@ -86,27 +88,32 @@ export default function SelfTestPaper() {
       </header>
 
       <div className="space-y-4">
-        {questions.map((q) => (
-          <div key={q.id} className="border rounded p-4 space-y-2">
-            <div className="font-medium">
-              {q.seq}. <MathText text={q.stem} />
-            </div>
-            <div className="grid grid-cols-2 gap-2">
-              {q.choices.map((c) => (
-                <label key={c.key} className="flex items-center gap-2 text-sm">
-                  <input
-                    type="radio"
-                    name={q.id}
-                    value={c.key}
-                    checked={(answers[q.id] ?? "") === c.key}
-                    onChange={(e) => setAnswers((prev) => ({ ...prev, [q.id]: e.target.value }))}
-                  />
-                  <span>
-                    {c.key}. <MathText text={c.text} />
-                  </span>
-                </label>
-              ))}
-            </div>
+        {groupQuestionsByMaterial(questions).map((group) => (
+          <div key={group.items[0].question.id} className="space-y-4">
+            {group.material ? <QuestionMaterial text={group.material} /> : null}
+            {group.items.map(({ question: q, prompt }) => (
+              <div key={q.id} className="border rounded p-4 space-y-2">
+                <div className="font-medium">
+                  {q.seq}. <MathText text={prompt} />
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  {q.choices.map((c) => (
+                    <label key={c.key} className="flex items-center gap-2 text-sm">
+                      <input
+                        type="radio"
+                        name={q.id}
+                        value={c.key}
+                        checked={(answers[q.id] ?? "") === c.key}
+                        onChange={(e) => setAnswers((prev) => ({ ...prev, [q.id]: e.target.value }))}
+                      />
+                      <span>
+                        {c.key}. <MathText text={c.text} />
+                      </span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            ))}
           </div>
         ))}
       </div>

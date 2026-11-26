@@ -8,8 +8,10 @@ import {
   type PlacementQuestionOut,
 } from "@/api/placement";
 import QuestionAnswerInput from "@/components/QuestionAnswerInput";
+import QuestionMaterial from "@/components/QuestionMaterial";
 import MathText from "@/components/MathText";
 import { useWaitForPaperGeneration } from "@/hooks/useWaitForPaperGeneration";
+import { groupQuestionsByMaterial } from "@/lib/questionMaterial";
 
 type AnswersState = Record<string, string>;
 
@@ -108,17 +110,22 @@ export default function Placement() {
       </div>
 
       <div className="space-y-4">
-        {questions.map((q) => (
-          <div key={q.id} className="border rounded p-4 space-y-2">
-            <div className="font-medium">
-              {q.seq}. [{q.q_type}] <MathText text={q.stem} />
-              <span className="ml-2 text-xs text-slate-500">({q.points} 分)</span>
-            </div>
-            <QuestionAnswerInput
-              question={q}
-              value={answers[q.id] ?? ""}
-              onChange={(val) => setAnswers((prev) => ({ ...prev, [q.id]: val }))}
-            />
+        {groupQuestionsByMaterial(questions).map((group) => (
+          <div key={group.items[0].question.id} className="space-y-4">
+            {group.material ? <QuestionMaterial text={group.material} /> : null}
+            {group.items.map(({ question: q, prompt }) => (
+              <div key={q.id} className="border rounded p-4 space-y-2">
+                <div className="font-medium">
+                  {q.seq}. [{q.q_type}] <MathText text={prompt} />
+                  <span className="ml-2 text-xs text-slate-500">({q.points} 分)</span>
+                </div>
+                <QuestionAnswerInput
+                  question={q}
+                  value={answers[q.id] ?? ""}
+                  onChange={(val) => setAnswers((prev) => ({ ...prev, [q.id]: val }))}
+                />
+              </div>
+            ))}
           </div>
         ))}
       </div>

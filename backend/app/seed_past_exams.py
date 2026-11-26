@@ -12,7 +12,11 @@ _SAMPLE_PAST_EXAMS: dict[str, list[tuple[int, str, str, list[dict], str]]] = {
         (
             2024,
             "主旨题",
-            "【2024真题·阅读】According to the passage, the author mainly argues that…",
+            "【2024真题·阅读】【材料】\n"
+            "Technology promises convenience, yet many social problems remain after new tools arrive. "
+            "Schools that adopt software still need teachers who can explain ideas.\n\n"
+            "【题目】\n"
+            "According to the passage, the author mainly argues that…",
             [
                 {"key": "A", "text": "technology alone cannot solve social problems"},
                 {"key": "B", "text": "education reform is unnecessary"},
