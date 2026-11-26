@@ -27,14 +27,120 @@ from app.services.model_gateway import ModelGateway, ModelGatewayRequest
 CHOICE_KEYS = ("A", "B", "C", "D")
 DEFAULT_QUESTION_COUNT = 10
 LLM_BATCH_SIZE = 3
+READING_PASSAGE_SIZE = 5
 PAPER_GEN_TIMEOUT = httpx.Timeout(180.0, connect=15.0)
 PaperPurpose = Literal["self_test", "placement"]
 ProgressCallback = Callable[[int, int, str], None]
 MOCK_PLACEMENT_STEM_PREFIX = "【模拟摸底·"
+MATERIAL_MARK = "【材料】"
+QUESTION_MARK = "【题目】"
 
 
 def is_mock_placement_stem(stem: str) -> bool:
     return stem.startswith(MOCK_PLACEMENT_STEM_PREFIX)
+
+
+def passage_chunk_size(section_name: str) -> int | None:
+    """How many questions share one source text.
+
+    ``None`` means the whole section shares one text. ``-1`` means the section
+    does not use a shared passage. Politics material questions use
+    ``material_group_sizes`` instead of a fixed chunk.
+    """
+    if "材料" in section_name:
+        return -1
+    if "完形" in section_name or "翻译" in section_name:
+        return None
+    if any(token in section_name for token in ("阅读理解B", "阅读B", "新题型")):
+        return None
+    if "阅读" in section_name:
+        return READING_PASSAGE_SIZE
+    return -1
+
+
+def material_group_sizes(section_name: str, count: int) -> list[int] | None:
+    """Question counts that share one politics source text."""
+    if "材料" not in section_name or count <= 0:
+        return None
+    if count == 5:
+        return [2, 1, 2]
+    sizes: list[int] = []
+    remaining = count
+    while remaining:
+        sizes.append(1 if remaining == 1 else min(2, remaining))
+        remaining -= sizes[-1]
+    return sizes
+
+
+def _same_section(slots: list[PlacementSlot]) -> bool:
+    return all(slot.section_name == slots[0].section_name for slot in slots)
+
+
+def slots_share_passage(slots: list[PlacementSlot]) -> bool:
+    if not slots or not _same_section(slots):
+        return False
+    if material_group_sizes(slots[0].section_name, len(slots)) is not None:
+        return True
+    if passage_chunk_size(slots[0].section_name) == -1:
+        return False
+    return True
+
+
+def iter_slot_batches(slots: list[PlacementSlot]) -> list[list[PlacementSlot]]:
+    """Keep ordinary questions in small batches, and keep one source text together."""
+    batches: list[list[PlacementSlot]] = []
+    index = 0
+    total = len(slots)
+    while index < total:
+        section_name = slots[index].section_name
+        if "材料" in section_name:
+            end = index + 1
+            while end < total and slots[end].section_name == section_name:
+                end += 1
+            section = slots[index:end]
+            offset = 0
+            for size in material_group_sizes(section_name, len(section)) or []:
+                batches.append(section[offset : offset + size])
+                offset += size
+            index = end
+            continue
+
+        chunk = passage_chunk_size(section_name)
+        if chunk == -1:
+            batch = [slots[index]]
+            index += 1
+            while (
+                index < total
+                and len(batch) < LLM_BATCH_SIZE
+                and "材料" not in slots[index].section_name
+                and passage_chunk_size(slots[index].section_name) == -1
+            ):
+                batch.append(slots[index])
+                index += 1
+            batches.append(batch)
+            continue
+
+        section_name = slots[index].section_name
+        end = index + 1
+        while end < total and slots[end].section_name == section_name:
+            end += 1
+        section = slots[index:end]
+        if chunk is None:
+            batches.append(section)
+        else:
+            for start in range(0, len(section), chunk):
+                batches.append(section[start : start + chunk])
+        index = end
+    return batches
+
+
+def compose_question_stem(stem: str, passage: str | None) -> str:
+    """Put the source text ahead of the question so the item can be answered alone."""
+    text = stem.strip()
+    material = (passage or "").strip()
+    if not material or material in text or text.startswith(MATERIAL_MARK):
+        return text
+    return f"{MATERIAL_MARK}\n{material}\n\n{QUESTION_MARK}\n{text}"
 
 
 @dataclass(frozen=True)
@@ -337,10 +443,8 @@ class PaperGenService:
     ) -> list[GeneratedQuestion]:
         question_count = len(slots)
         out: list[GeneratedQuestion] = []
-        seq = 1
-        while seq <= question_count:
-            batch_count = min(LLM_BATCH_SIZE, question_count - seq + 1)
-            batch_slots = slots[seq - 1 : seq - 1 + batch_count]
+        produced = 0
+        for batch_slots in iter_slot_batches(slots):
             batch = self._llm_questions_for_slot_batch(
                 provider,
                 model,
@@ -351,9 +455,10 @@ class PaperGenService:
             )
 
             for item in batch:
+                produced += 1
                 out.append(
                     GeneratedQuestion(
-                        seq=seq,
+                        seq=produced,
                         knowledge_node_id=item.knowledge_node_id,
                         q_type=item.q_type,
                         stem=item.stem,
@@ -363,12 +468,11 @@ class PaperGenService:
                         rubric_json=item.rubric_json,
                     )
                 )
-                seq += 1
             if on_progress:
                 on_progress(
-                    min(seq - 1, question_count),
+                    produced,
                     question_count,
-                    f"已生成 {min(seq - 1, question_count)}/{question_count} 题",
+                    f"已生成 {produced}/{question_count} 题",
                 )
         return out
 
@@ -582,12 +686,14 @@ class PaperGenService:
             return "模拟摸底卷"
         return "自测卷"
 
-    def _schema_example_for_slot(self, slot: PlacementSlot) -> dict:
+    def _schema_example_for_slot(
+        self, slot: PlacementSlot, *, stem_placeholder: str | None = None
+    ) -> dict:
         base: dict = {
             "seq": slot.seq,
             "knowledge_node_id": str(slot.knowledge_node.id),
             "q_type": slot.q_type,
-            "stem": "<完整题干，考生可直接作答>",
+            "stem": stem_placeholder or "<完整题干，考生可直接作答>",
             "points": slot.points,
         }
         if slot.q_type == "multi_choice":
@@ -615,6 +721,90 @@ class PaperGenService:
                 "keywords": ["<关键词>"],
             }
         return base
+
+    @staticmethod
+    def _english_context_lines(slots: list[PlacementSlot]) -> list[str]:
+        lines = [
+            "英语题必须自带作答所需的全部上下文，禁止只有设问、没有原文。",
+            "阅读理解、完形填空、翻译：在 JSON 顶层写 passage，内容是完整原文；questions[].stem 只写设问。",
+            "写作题的 stem 必须包含完整写作要求，包括情景、图画或图表说明、文体和字数。",
+            "不要模仿样题里被省略原文的 “According to the passage…” 题干。",
+        ]
+        if not slots_share_passage(slots):
+            return lines
+        section = slots[0].section_name
+        lines.append(f"本批次「{section}」的题目共用同一篇 passage，不要每题另写一篇。")
+        if "完形" in section:
+            lines.append("完形填空的 passage 是一篇完整短文，空格用 (1)(2)… 标出，并与题目顺序一致。")
+        elif "翻译" in section:
+            lines.append("翻译的 passage 是完整待译原文。")
+        elif any(token in section for token in ("阅读理解B", "阅读B", "新题型")):
+            lines.append("阅读理解B的 passage 是完整语篇，包含作答所需的全部段落和选项文字。")
+        else:
+            lines.append("阅读理解的 passage 是一篇完整文章，设问必须能在这篇文章里找到依据。")
+        return lines
+
+    @staticmethod
+    def _politics_context_lines(slots: list[PlacementSlot]) -> list[str]:
+        lines = [
+            "政治题必须自带作答所需的全部材料，禁止只有设问、没有材料。",
+        ]
+        if slots_share_passage(slots) and "材料" in slots[0].section_name:
+            section = slots[0].section_name
+            lines.extend(
+                [
+                    "材料分析题：在 JSON 顶层写 passage，内容是完整材料；questions[].stem 只写设问。",
+                    f"本批次「{section}」的题目共用同一则 passage，不要每题另写一则。",
+                    "材料需包含作答所需的事实、观点和数据，设问必须能在这则材料里找到依据。",
+                    "不要写「结合材料」「根据上述材料」却不提供材料正文。",
+                ]
+            )
+            return lines
+        lines.append(
+            "单项选择、多项选择如果引用讲话、案例或原文，把完整引用写入 stem，不要只写「根据材料」。"
+        )
+        return lines
+
+    def _slot_response_example(self, slots: list[PlacementSlot]) -> dict:
+        shared = slots_share_passage(slots)
+        if shared and slots and "材料" in slots[0].section_name:
+            placeholder = "<仅设问，不要重复材料>"
+            passage = "<本批次共用的完整材料>"
+        elif shared:
+            placeholder = "<仅设问，不要重复原文>"
+            passage = "<本批次共用的完整原文>"
+        else:
+            placeholder = "<完整题干，考生可直接作答>"
+            passage = ""
+        questions = [
+            self._schema_example_for_slot(slot, stem_placeholder=placeholder) for slot in slots
+        ]
+        if shared:
+            return {"passage": passage, "questions": questions}
+        return {"questions": questions}
+
+    @staticmethod
+    def _self_test_question_example(subject_code: str) -> dict:
+        example: dict = {
+            "seq": 1,
+            "knowledge_node_id": "<uuid>",
+            "q_type": "single_choice",
+            "stem": "<设问；写作题则写完整写作要求>" if subject_code == "english" else "<题干>",
+            "choices": [
+                {"key": "A", "text": "<选项>"},
+                {"key": "B", "text": "<选项>"},
+                {"key": "C", "text": "<选项>"},
+                {"key": "D", "text": "<选项>"},
+            ],
+            "answer_key": "A",
+            "points": 1,
+        }
+        if subject_code == "english":
+            example["passage"] = "<阅读、完形或翻译的完整原文；不需要材料时为空字符串>"
+        elif subject_code == "politics":
+            example["stem"] = "<设问>"
+            example["passage"] = "<讲话、案例或材料原文；不依赖材料时为空字符串>"
+        return example
 
     def _call_llm_for_slots(
         self,
@@ -645,11 +835,19 @@ class PaperGenService:
             "请按往年真题卷的题型与题量结构出题，严格依据当年考试大纲，可参考往年真题风格但须原创题干。",
             "题干必须是完整、可独立作答的题目正文；禁止写「参照某年卷第几题」「卷面第几题」「请填写正确答案」等元数据或占位语。",
             "数学公式使用 LaTeX，并用 $...$ 包裹行内公式（例如 $\\theta$、$X_1$、$x^{\\theta-1}$）；分段函数可用 \\begin{cases}...\\end{cases}。",
-            "当年考试大纲：",
-            json.dumps(placement_context.syllabus_outline, ensure_ascii=False),
-            "往年真题卷结构（题型与题量）：",
-            json.dumps(placement_context.paper_sections, ensure_ascii=False),
         ]
+        if subject_code == "english":
+            prompt_lines.extend(self._english_context_lines(slots))
+        elif subject_code == "politics":
+            prompt_lines.extend(self._politics_context_lines(slots))
+        prompt_lines.extend(
+            [
+                "当年考试大纲：",
+                json.dumps(placement_context.syllabus_outline, ensure_ascii=False),
+                "往年真题卷结构（题型与题量）：",
+                json.dumps(placement_context.paper_sections, ensure_ascii=False),
+            ]
+        )
         if placement_context.past_exam_samples:
             prompt_lines.extend(
                 [
@@ -663,10 +861,7 @@ class PaperGenService:
                 json.dumps(slots_payload, ensure_ascii=False),
                 "",
                 "只输出 STRICT JSON，不要 markdown：",
-                json.dumps(
-                    {"questions": [self._schema_example_for_slot(slot) for slot in slots]},
-                    ensure_ascii=False,
-                ),
+                json.dumps(self._slot_response_example(slots), ensure_ascii=False),
             ]
         )
         prompt = "\n".join(prompt_lines)
@@ -707,6 +902,23 @@ class PaperGenService:
                 prompt_lines.append(f"英语卷种：{english_track}")
             if math_track:
                 prompt_lines.append(f"数学卷种：{math_track}")
+        if subject_code == "english":
+            prompt_lines.extend(
+                [
+                    "英语题必须自带作答所需的全部上下文，禁止只有设问、没有原文。",
+                    "阅读理解、完形填空、翻译：把完整原文写入该题的 passage，stem 只写设问。",
+                    "写作题把完整写作要求（情景、图画或图表说明、文体和字数）写入 stem。",
+                    "词汇或语法等不依赖篇章的题，passage 用空字符串，并把完整句子写入 stem。",
+                ]
+            )
+        elif subject_code == "politics":
+            prompt_lines.extend(
+                [
+                    "政治题如果依据材料、讲话或案例，把完整原文写入 passage，stem 只写设问。",
+                    "不依赖材料的概念题，passage 用空字符串。",
+                    "禁止只写「根据材料」而不给材料。",
+                ]
+            )
 
         prompt_lines.append("优先覆盖以下知识点（薄弱点优先）：")
 
@@ -718,20 +930,7 @@ class PaperGenService:
                 json.dumps(
                     {
                         "questions": [
-                            {
-                                "seq": 1,
-                                "knowledge_node_id": "<uuid>",
-                                "q_type": "single_choice",
-                                "stem": "<题干>",
-                                "choices": [
-                                    {"key": "A", "text": "<选项>"},
-                                    {"key": "B", "text": "<选项>"},
-                                    {"key": "C", "text": "<选项>"},
-                                    {"key": "D", "text": "<选项>"},
-                                ],
-                                "answer_key": "A",
-                                "points": 1,
-                            }
+                            self._self_test_question_example(subject_code),
                         ]
                     },
                     ensure_ascii=False,
@@ -768,10 +967,13 @@ class PaperGenService:
         *,
         slot: PlacementSlot,
         allowed_ids: set[uuid.UUID],
+        passage: str | None = None,
     ) -> GeneratedQuestion | None:
         stem = str(item.get("stem") or "").strip()
         if not stem:
             return None
+        item_passage = str(item.get("passage") or passage or "").strip()
+        stem = compose_question_stem(stem, item_passage or None)
 
         node_raw = item.get("knowledge_node_id")
         node_id: uuid.UUID | None = None
@@ -879,13 +1081,17 @@ class PaperGenService:
             answer_key = str(item.get("answer_key") or "A").strip().upper()
             if answer_key not in CHOICE_KEYS:
                 answer_key = "A"
+            passage = str(item.get("passage") or "").strip()
 
             out.append(
                 GeneratedQuestion(
                     seq=int(item.get("seq") or idx),
                     knowledge_node_id=node_id,
                     q_type=str(item.get("q_type") or "single_choice"),
-                    stem=str(item.get("stem") or f"第{idx}题"),
+                    stem=compose_question_stem(
+                        str(item.get("stem") or f"第{idx}题"),
+                        passage or None,
+                    ),
                     choices_json=[
                         {"key": str(c.get("key")), "text": str(c.get("text") or "")}
                         for c in choices
@@ -912,12 +1118,16 @@ class PaperGenService:
             return []
 
         allowed_ids = {slot.knowledge_node.id for slot in slots}
+        shared_passage = str(data.get("passage") or "").strip()
         out: list[GeneratedQuestion] = []
         for idx, slot in enumerate(slots):
             if idx >= len(items) or not isinstance(items[idx], dict):
                 break
             parsed = self._parse_llm_question_item(
-                items[idx], slot=slot, allowed_ids=allowed_ids
+                items[idx],
+                slot=slot,
+                allowed_ids=allowed_ids,
+                passage=shared_passage or None,
             )
             if parsed is None:
                 return []

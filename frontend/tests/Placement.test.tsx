@@ -133,5 +133,54 @@ describe("Placement page", () => {
 
     await waitFor(() => expect(screen.getByText("workspace")).toBeTruthy());
   });
+
+  it("shows a shared reading passage once above its questions", async () => {
+    const passage = "Schools still need teachers who can explain ideas.";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: any) => {
+        const url = String(input);
+        if (url.includes("/api/student/placement/p1")) {
+          return new Response(
+            JSON.stringify({
+              id: "p1",
+              subject_code: "english",
+              status: "ready",
+              title: "英语摸底",
+              created_at: "2026-05-28T00:00:00Z",
+              questions: [
+                {
+                  id: "q1",
+                  seq: 1,
+                  q_type: "single_choice",
+                  stem: `【材料】\n${passage}\n\n【题目】\nWhat is the main idea?`,
+                  choices: [{ key: "A", text: "Teachers matter." }],
+                  answer_key: "A",
+                  points: 2,
+                },
+                {
+                  id: "q2",
+                  seq: 2,
+                  q_type: "single_choice",
+                  stem: `【材料】\n${passage}\n\n【题目】\nWhat does the author imply?`,
+                  choices: [{ key: "A", text: "Tools are not enough." }],
+                  answer_key: "A",
+                  points: 2,
+                },
+              ],
+            }),
+            { status: 200 },
+          );
+        }
+        return new Response(JSON.stringify({ detail: "not found" }), { status: 404 });
+      }),
+    );
+    renderPlacement();
+
+    await waitFor(() => expect(screen.getByText(passage)).toBeTruthy());
+    expect(screen.getAllByText(passage)).toHaveLength(1);
+    expect(screen.getByText(/What is the main idea/)).toBeTruthy();
+    expect(screen.getByText(/What does the author imply/)).toBeTruthy();
+  });
 });
 

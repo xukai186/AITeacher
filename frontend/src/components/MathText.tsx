@@ -15,7 +15,11 @@ export default function MathText({ text, className }: Props) {
     <span className={className}>
       {segments.map((segment, index) => {
         if (segment.type === "text") {
-          return <span key={index}>{segment.content}</span>;
+          return (
+            <span key={index} className="whitespace-pre-wrap">
+              {segment.content}
+            </span>
+          );
         }
 
         const displayMode = shouldDisplayMath(segment.content, segment.display);
